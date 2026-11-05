@@ -1317,6 +1317,17 @@ export function PtyTerminal({
     fitRef.current?.fit();
   }, [themeKey, appearanceKey]);
 
+  // Webfont subsets load on first use (e.g. Polish or Cyrillic letters), and
+  // WebGL keeps whatever fallback glyph it drew in the meantime until its
+  // atlas is rebuilt.
+  React.useEffect(() => {
+    const fonts = document.fonts as FontFaceSet | undefined;
+    if (!fonts) return;
+    const handleFontsLoaded = () => xtermRef.current?.clearTextureAtlas();
+    fonts.addEventListener('loadingdone', handleFontsLoaded);
+    return () => fonts.removeEventListener('loadingdone', handleFontsLoaded);
+  }, []);
+
   // X11 failure UX (spec §4.5): when the Rust dispatcher cannot reach the local
   // X server while X11 forwarding is enabled, it emits this event (macOS only).
   // Surface a single actionable toast guiding the user to install XQuartz.

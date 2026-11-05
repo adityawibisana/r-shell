@@ -171,7 +171,7 @@ R-Shell combines an interactive terminal, dual-panel file manager, remote deskto
 
 - **10 terminal color themes** — VS Code Dark, Monokai, Solarized Dark/Light, Dracula, One Dark, Nord, Gruvbox Dark, Tokyo Night, Matrix
 - **Dark / Light / Auto** — Application theme follows system preference
-- **7 font families** — Menlo, JetBrains Mono, Fira Code, Source Code Pro, Consolas, Monaco, Courier New
+- **8 font families** — Menlo, Cascadia Mono (embedded), JetBrains Mono, Fira Code, Source Code Pro, Consolas, Monaco, Courier New
 - **Configurable** — Font size, line height, letter spacing, cursor style (block/underline/bar), scrollback (1K–100K lines)
 - **Background images** — Custom image with opacity, blur, and position controls
 - **Terminal transparency** — Configurable opacity

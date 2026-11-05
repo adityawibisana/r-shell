@@ -144,6 +144,7 @@ export function TerminalSection({ appearance, onChange, query }: TerminalSection
                         in terminal-config ("Courier New" double-quoted) or
                         the default renders as a blank SelectValue. */}
                     <SelectItem value='Menlo, Monaco, "Courier New", monospace'>Menlo</SelectItem>
+                    <SelectItem value="'Cascadia Mono', monospace">Cascadia Mono</SelectItem>
                     <SelectItem value="'JetBrains Mono', monospace">JetBrains Mono</SelectItem>
                     <SelectItem value="'Fira Code', monospace">Fira Code</SelectItem>
                     <SelectItem value="'Source Code Pro', monospace">Source Code Pro</SelectItem>

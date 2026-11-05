@@ -5,6 +5,7 @@ import { FileViewerWindow } from "./FileViewerWindow.tsx";
 import "./index.css";
 import "./styles/globals.css";
 import { initializeTheme } from "./lib/utils";
+import { loadEmbeddedFonts } from "./lib/embedded-fonts";
 
 // Initialize theme before rendering
 initializeTheme();
@@ -12,4 +13,6 @@ initializeTheme();
 const mode = new URLSearchParams(window.location.search).get("mode");
 const root = mode === "file-viewer" ? <FileViewerWindow /> : <App />;
 
-createRoot(document.getElementById("root")!).render(root);
+void loadEmbeddedFonts().then(() => {
+  createRoot(document.getElementById("root")!).render(root);
+});
