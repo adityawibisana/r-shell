@@ -163,6 +163,7 @@
       "tunnelPassword": "Hasło tunelu",
       "tunnelKeyPath": "Klucz prywatny tunelu",
       "tunnelPassphrase": "Hasło klucza tunelu (opcjonalne)",
+      "authenticator": "Aplikacja uwierzytelniająca (opcjonalnie)",
       "sudoPassword": "Hasło sudo (opcjonalne)",
       "notes": "Notatki"
     },
@@ -186,6 +187,8 @@
       "tunnelKeyPath": "~/.ssh/id_ed25519",
       "tunnelPassphrase": "Wpisz hasło, jeśli klucz jest zaszyfrowany",
       "savedPassword": "Pozostaw puste, aby zachować zapisane hasło",
+      "authenticator": "Tajny klucz z konfiguracji aplikacji uwierzytelniającej",
+      "savedAuthenticator": "Zapisano. Zostaw puste, aby zachować",
       "sudoPassword": "Wpisywane do terminala na żądanie",
       "notes": "Co chcesz mieć pod ręką dla tego hosta"
     },
@@ -280,6 +283,7 @@
     },
     "hint": {
       "savedPasswordKept": "Dla tego połączenia zapisano hasło. Pozostaw pole puste, aby je zachować, albo wpisz nowe, aby je zastąpić.",
+      "authenticator": "Tajny klucz base32 używany przez aplikację uwierzytelniającą. R-Shell odpowiada nim na prośbę serwera o kod weryfikacyjny podczas logowania. Nigdy nie jest tu pokazywany.",
       "sudoPassword": "Wysyłane do terminala przez prawy przycisk → Wpisz hasło sudo. Nigdy nie jest tu pokazywane."
     },
     "passwordSavingDisabledHint": "Zapisywanie haseł jest wyłączone w ustawieniach — połączenie zadziała, ale dane logowania nie zostaną zapisane.",

@@ -168,6 +168,82 @@ describe('ConnectionDialog notes and sudo password', () => {
   });
 });
 
+describe('ConnectionDialog authenticator secret', () => {
+  const withSecret = { ...connection, totpSecret: seal('JBSWY3DPEHPK3PXP') };
+
+  function renderDialog(editingConnection: typeof connection & { totpSecret?: string }, onSave = vi.fn()) {
+    render(
+      <ConnectionDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        onConnect={vi.fn()}
+        onSave={onSave}
+        editingConnection={editingConnection}
+      />,
+    );
+    return onSave;
+  }
+
+  it('is a sealed secret that connect flows decrypt', async () => {
+    expect(SECRET_FIELDS).toContain('totpSecret');
+    const record: Record<string, unknown> = { ...withSecret };
+    await openConnectionSecrets(record);
+    expect(record.totpSecret).toBe('JBSWY3DPEHPK3PXP');
+  });
+
+  it('seals a typed secret on save', async () => {
+    ConnectionStorageManager.saveConnectionWithId('conn-1', connection);
+    const onSave = renderDialog(connection);
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Auth' }));
+    fireEvent.change(await screen.findByLabelText('Authenticator (optional)'), { target: { value: 'JBSWY3DPEHPK3PXP' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(ConnectionStorageManager.getConnection('conn-1')?.totpSecret).toBe(seal('JBSWY3DPEHPK3PXP'));
+  });
+
+  it('never shows a stored secret and keeps it when left blank', async () => {
+    ConnectionStorageManager.saveConnectionWithId('conn-1', withSecret);
+    const onSave = renderDialog(withSecret);
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Auth' }));
+    const field = await screen.findByLabelText('Authenticator (optional)');
+    expect(field).toHaveValue('');
+    expect(field).toHaveAttribute('placeholder', 'Saved. Leave blank to keep it');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(ConnectionStorageManager.getConnection('conn-1')?.totpSecret).toBe(withSecret.totpSecret);
+  });
+
+  it('is offered on SFTP but not on protocols without an SSH login', async () => {
+    const { unmount } = render(
+      <ConnectionDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        onConnect={vi.fn()}
+        editingConnection={{ ...connection, protocol: 'SFTP' }}
+      />,
+    );
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Auth' }));
+    expect(await screen.findByLabelText('Authenticator (optional)')).toBeInTheDocument();
+    unmount();
+
+    render(
+      <ConnectionDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        onConnect={vi.fn()}
+        editingConnection={{ ...connection, protocol: 'FTP' }}
+      />,
+    );
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Auth' }));
+    expect(await screen.findByLabelText('Password')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Authenticator (optional)')).toBeNull();
+  });
+});
+
 describe('ConnectionNotes details row', () => {
   it('shows the notes and copies them as a whole', async () => {
     render(<ConnectionNotes notes={NOTES} />);

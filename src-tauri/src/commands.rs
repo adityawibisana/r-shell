@@ -27,6 +27,8 @@ pub struct ConnectRequest {
     pub password: Option<String>,
     pub key_path: Option<String>,
     pub passphrase: Option<String>,
+    /// Base32 authenticator secret for servers that ask for a one-time code.
+    pub totp_secret: Option<String>,
     /// "strict" (default), "accept-new" (after the user confirmed a changed
     /// key) or "off" (Host Key Verification switched off in Settings).
     pub host_key_policy: Option<String>,
@@ -170,6 +172,7 @@ pub async fn ssh_connect(
         port: request.port,
         username: request.username,
         auth_method,
+        totp_secret: request.totp_secret,
         compression: request.compression.unwrap_or(true),
         keepalive_interval,
         keepalive_max,
@@ -2631,6 +2634,8 @@ pub struct SftpConnectRequest {
     pub password: Option<String>,
     pub key_path: Option<String>,
     pub passphrase: Option<String>,
+    /// Base32 authenticator secret for servers that ask for a one-time code.
+    pub totp_secret: Option<String>,
     /// "strict" (default), "accept-new" or "off" — see `HostKeyPolicy`.
     pub host_key_policy: Option<String>,
     /// TCP/SSH handshake timeout in seconds — from the Settings "Connection
@@ -2687,6 +2692,7 @@ pub async fn sftp_connect(
         port: request.port,
         username: request.username,
         auth_method: auth,
+        totp_secret: request.totp_secret,
         tunnel,
         host_key_policy,
         connect_timeout: request.connect_timeout.unwrap_or(10),
@@ -5473,6 +5479,7 @@ mod proxy_config_tests {
             port: 22,
             username: "root".to_string(),
             auth_method: "password".to_string(),
+            totp_secret: None,
             password: Some("pw".to_string()),
             key_path: None,
             passphrase: None,

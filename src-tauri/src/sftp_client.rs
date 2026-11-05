@@ -16,6 +16,10 @@ pub struct SftpConfig {
     pub port: u16,
     pub username: String,
     pub auth_method: SftpAuthMethod,
+    /// Base32 authenticator secret, answered with a one-time code when the
+    /// server asks for one after the first credential.
+    #[serde(default)]
+    pub totp_secret: Option<String>,
     /// Optional SSH jump host (bastion) to route the connection through.
     pub tunnel: Option<TunnelConfig>,
     /// Host-key policy for this connection and its jump host (`AcceptNew`
@@ -139,7 +143,10 @@ async fn authenticate_sftp_session(
     session: &mut client::Handle<Client>,
     config: &SftpConfig,
 ) -> Result<()> {
-    let timeout = auth_timeout_for(config.connect_timeout);
+    let timeout = crate::ssh::auth_timeout_with_totp(
+        auth_timeout_for(config.connect_timeout),
+        config.totp_secret.as_deref(),
+    );
     tokio::time::timeout(timeout, authenticate_sftp_session_inner(session, config))
         .await
         .map_err(|_| {
@@ -154,11 +161,22 @@ async fn authenticate_sftp_session_inner(
     session: &mut client::Handle<Client>,
     config: &SftpConfig,
 ) -> Result<()> {
+    let totp_secret = config.totp_secret.as_deref();
     let authenticated = match &config.auth_method {
-        SftpAuthMethod::Password { password } => session
-            .authenticate_password(&config.username, password)
-            .await
-            .map_err(|e| anyhow::anyhow!("SFTP password authentication failed: {}", e))?,
+        SftpAuthMethod::Password { password } => {
+            let result = session
+                .authenticate_password(&config.username, password)
+                .await
+                .map_err(|e| anyhow::anyhow!("SFTP password authentication failed: {}", e))?;
+            crate::ssh::finish_auth(
+                session,
+                &config.username,
+                result,
+                Some(password),
+                totp_secret,
+            )
+            .await?
+        }
         SftpAuthMethod::PublicKey {
             key_path,
             passphrase,
@@ -168,12 +186,13 @@ async fn authenticate_sftp_session_inner(
                 &config.username,
                 key_path,
                 passphrase.as_deref(),
+                totp_secret,
             )
             .await;
         }
     };
 
-    if !authenticated.success() {
+    if !authenticated {
         return Err(anyhow::anyhow!(
             "SFTP authentication failed. Please check your credentials."
         ));
@@ -339,6 +358,8 @@ impl StandaloneSftpClient {
     /// Dial `count` extra direct SSH connections (own TCP socket, own auth),
     /// tolerating per-dial failures — whatever authenticates in time is
     /// returned; the transfer degrades to fewer streams, never errors.
+    /// Connections with an authenticator secret dial nothing: each extra login
+    /// would spend a one-time code, and servers rate-limit those.
     async fn dial_extra(
         &self,
         count: usize,
@@ -348,7 +369,7 @@ impl StandaloneSftpClient {
         let Some(config) = &self.config else {
             return Vec::new();
         };
-        if config.tunnel.is_some() || count == 0 {
+        if config.tunnel.is_some() || config.totp_secret.is_some() || count == 0 {
             return Vec::new();
         }
         let timeout = Duration::from_secs(config.connect_timeout.max(1));

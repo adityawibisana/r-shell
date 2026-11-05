@@ -161,6 +161,7 @@
       "tunnelPassword": "隧道密码",
       "tunnelKeyPath": "隧道私钥路径",
       "tunnelPassphrase": "隧道密钥密码（可选）",
+      "authenticator": "身份验证器（可选）",
       "sudoPassword": "sudo 密码（可选）",
       "notes": "备注"
     },
@@ -184,6 +185,8 @@
       "tunnelKeyPath": "~/.ssh/id_ed25519",
       "tunnelPassphrase": "密钥加密时输入密码",
       "savedPassword": "留空保持已保存的密码",
+      "authenticator": "身份验证器设置中的密钥",
+      "savedAuthenticator": "已保存。留空则保持不变",
       "sudoPassword": "按需输入到终端",
       "notes": "此主机需要随手可用的信息"
     },
@@ -278,6 +281,7 @@
     },
     "hint": {
       "savedPasswordKept": "此连接已保存密码。留空保持不变，输入新密码即可替换。",
+      "authenticator": "身份验证器应用使用的 base32 密钥。R-Shell 在登录时用它回答服务器的验证码提示，此处不会再显示。",
       "sudoPassword": "通过终端右键菜单“输入 sudo 密码”发送，此处不会再显示。"
     },
     "passwordSavingDisabledHint": "已在设置中关闭密码保存——连接可正常建立，但不会存储凭据。",

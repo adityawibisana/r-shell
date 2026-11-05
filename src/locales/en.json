@@ -161,6 +161,7 @@
       "tunnelPassword": "Tunnel Password",
       "tunnelKeyPath": "Tunnel Private Key",
       "tunnelPassphrase": "Tunnel Passphrase (optional)",
+      "authenticator": "Authenticator (optional)",
       "sudoPassword": "sudo password (optional)",
       "notes": "Notes"
     },
@@ -184,6 +185,8 @@
       "tunnelKeyPath": "~/.ssh/id_ed25519",
       "tunnelPassphrase": "Enter passphrase if key is encrypted",
       "savedPassword": "Leave blank to keep saved password",
+      "authenticator": "Secret key from your authenticator setup",
+      "savedAuthenticator": "Saved. Leave blank to keep it",
       "sudoPassword": "Typed into the terminal on request",
       "notes": "Anything you want at hand for this host"
     },
@@ -278,6 +281,7 @@
     },
     "hint": {
       "savedPasswordKept": "A password is saved for this connection. Leave the field blank to keep it, or type a new password to replace it.",
+      "authenticator": "The base32 secret key behind your authenticator app. R-Shell uses it to answer the server's verification code prompt at login. Never shown back here.",
       "sudoPassword": "Sent to the terminal via right-click → Type sudo password. Never shown back here."
     },
     "passwordSavingDisabledHint": "Password saving is turned off in Settings — the connection will work, but credentials won't be stored.",

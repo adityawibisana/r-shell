@@ -16,6 +16,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+mod totp;
+
 /// Preferred host-key algorithms advertised to the server, ordered from most to
 /// least preferred.  The legacy `ssh-rsa` (SHA-1) entry is kept so that older
 /// servers that only offer bare-RSA host keys are still reachable. In russh
@@ -109,6 +111,10 @@ pub struct SshConfig {
     pub port: u16,
     pub username: String,
     pub auth_method: AuthMethod,
+    /// Base32 authenticator secret, answered with a one-time code when the
+    /// server asks for one after the first credential.
+    #[serde(default)]
+    pub totp_secret: Option<String>,
     /// Enable zlib compression negotiation (default: false, matching the UI/OpenSSH).
     pub compression: bool,
     /// Keepalive interval in seconds. `None` disables keepalive.
@@ -151,6 +157,15 @@ pub(crate) const MIN_AUTH_TIMEOUT_SECS: u64 = 10;
 /// setting, never below [`MIN_AUTH_TIMEOUT_SECS`].
 pub(crate) fn auth_timeout_for(connect_timeout_secs: u64) -> Duration {
     Duration::from_secs(connect_timeout_secs.max(MIN_AUTH_TIMEOUT_SECS))
+}
+
+/// A login with an authenticator secret can wait for a fresh one-time code, up
+/// to one full time step, on top of the normal authentication budget.
+pub(crate) fn auth_timeout_with_totp(timeout: Duration, totp_secret: Option<&str>) -> Duration {
+    match totp_secret {
+        Some(_) => timeout + Duration::from_secs(totp::STEP_SECS),
+        None => timeout,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -670,9 +685,11 @@ async fn authenticate_session(
     session: &mut client::Handle<Client>,
     username: &str,
     method: &AuthMethod,
+    totp_secret: Option<&str>,
     timeout: Duration,
 ) -> Result<()> {
-    tokio::time::timeout(timeout, authenticate(session, username, method))
+    let timeout = auth_timeout_with_totp(timeout, totp_secret);
+    tokio::time::timeout(timeout, authenticate(session, username, method, totp_secret))
         .await
         .map_err(|_| {
             anyhow::anyhow!(
@@ -693,11 +710,12 @@ pub(crate) async fn authenticate_with_key_files(
     username: &str,
     key_path: &str,
     passphrase: Option<&str>,
+    totp_secret: Option<&str>,
 ) -> Result<()> {
     if !key_path.trim().is_empty() {
         let path = crate::os_keypath::expand_tilde(key_path);
         let key = load_private_key(&path, key_path, passphrase)?;
-        if offer_key(session, username, key, &path).await? {
+        if offer_key(session, username, key, &path, totp_secret).await? {
             return Ok(());
         }
         return Err(anyhow::anyhow!(
@@ -717,7 +735,7 @@ pub(crate) async fn authenticate_with_key_files(
     for path in &candidates {
         match load_private_key(path, path, passphrase) {
             Ok(key) => {
-                if offer_key(session, username, key, path).await? {
+                if offer_key(session, username, key, path, totp_secret).await? {
                     return Ok(());
                 }
                 tried.push(format!("{path} (not accepted by the server)"));
@@ -762,11 +780,14 @@ fn load_private_key(path: &str, shown: &str, passphrase: Option<&str>) -> Result
 /// as a failed AuthResult, not an error). RSA keys go first with rsa-sha2-256,
 /// then legacy `ssh-rsa` (SHA-1) for ancient servers; other key types are
 /// offered once, so trying several keys stays within the server's MaxAuthTries.
+/// A key the server accepts but wants a second factor for is not rejected: the
+/// login continues in [`finish_auth`] instead of moving on to the next key.
 async fn offer_key(
     session: &mut client::Handle<Client>,
     username: &str,
     key: PrivateKey,
     path: &str,
+    totp_secret: Option<&str>,
 ) -> Result<bool> {
     let is_rsa = matches!(key.algorithm(), Algorithm::Rsa { .. });
     let key = Arc::new(key);
@@ -782,17 +803,125 @@ async fn offer_key(
             .map_err(|e| {
                 anyhow::anyhow!("Public key authentication failed with key {}: {}.", path, e)
             })?;
-        if result.success() {
+        if finish_auth(session, username, result, None, totp_secret).await? {
             return Ok(true);
         }
     }
     Ok(false)
 }
 
+/// Follow up on a first credential's result. `Ok(false)` means it was rejected.
+///
+/// Servers that require a second factor (`AuthenticationMethods
+/// publickey,keyboard-interactive`) answer the first credential with a *partial
+/// success*, which russh reports as a failed AuthResult, and expect the login
+/// to carry on over keyboard-interactive. PAM setups can also take the password
+/// and the code together in keyboard-interactive, refusing the plain password
+/// method, so a rejected password is retried there when a secret is configured.
+pub(crate) async fn finish_auth(
+    session: &mut client::Handle<Client>,
+    username: &str,
+    result: client::AuthResult,
+    password: Option<&str>,
+    totp_secret: Option<&str>,
+) -> Result<bool> {
+    let client::AuthResult::Failure {
+        remaining_methods,
+        partial_success,
+    } = result
+    else {
+        return Ok(true);
+    };
+    let keyboard_interactive = remaining_methods.contains(&MethodKind::KeyboardInteractive);
+    if partial_success {
+        if !keyboard_interactive {
+            let methods: Vec<&str> = remaining_methods.iter().map(<&str>::from).collect();
+            return Err(anyhow::anyhow!(
+                "The server accepted the first credential but also requires: {}. R-Shell cannot complete that login.",
+                methods.join(", ")
+            ));
+        }
+        let secret = totp_secret.ok_or_else(|| {
+            anyhow::anyhow!(
+                "This server also requires an authenticator code. Add the secret key under Edit Connection > Authentication > Authenticator."
+            )
+        })?;
+        answer_keyboard_interactive(session, username, secret, password).await?;
+        return Ok(true);
+    }
+    if let (true, Some(secret), Some(_)) = (keyboard_interactive, totp_secret, password) {
+        answer_keyboard_interactive(session, username, secret, password).await?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// Complete keyboard-interactive login with a one-time code. A rejected code
+/// gets one more try with the next one: the first may simply be spent already,
+/// by another client or an earlier run of the app, on a server that refuses
+/// reuse. Stopping there keeps a wrong secret from tripping lockouts.
+async fn answer_keyboard_interactive(
+    session: &mut client::Handle<Client>,
+    username: &str,
+    secret: &str,
+    password: Option<&str>,
+) -> Result<()> {
+    if keyboard_interactive_attempt(session, username, secret, password).await?
+        || keyboard_interactive_attempt(session, username, secret, password).await?
+    {
+        return Ok(());
+    }
+    Err(anyhow::anyhow!(
+        "The server rejected the authenticator code. Check the secret key under Edit Connection > Authentication > Authenticator, and that this computer's clock is correct."
+    ))
+}
+
+/// Run one keyboard-interactive exchange; `Ok(false)` means it was rejected.
+/// Password prompts get the password when there is one, everything else gets
+/// the one-time code. It is generated only when a prompt needs it, so a server
+/// that asks nothing doesn't spend a code.
+async fn keyboard_interactive_attempt(
+    session: &mut client::Handle<Client>,
+    username: &str,
+    secret: &str,
+    password: Option<&str>,
+) -> Result<bool> {
+    let failed = |e: russh::Error| anyhow::anyhow!("Authenticator login failed: {}", e);
+    let mut reply = session
+        .authenticate_keyboard_interactive_start(username, None)
+        .await
+        .map_err(failed)?;
+    let mut code: Option<String> = None;
+    loop {
+        let prompts = match reply {
+            client::KeyboardInteractiveAuthResponse::Success => return Ok(true),
+            client::KeyboardInteractiveAuthResponse::Failure { .. } => return Ok(false),
+            client::KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. } => prompts,
+        };
+        let mut responses = Vec::with_capacity(prompts.len());
+        for prompt in &prompts {
+            responses.push(match password {
+                Some(password) if prompt.prompt.to_lowercase().contains("password") => {
+                    password.to_string()
+                }
+                _ => match &code {
+                    Some(code) => code.clone(),
+                    None => code.insert(totp::next_login_code(secret).await?).clone(),
+                },
+            });
+        }
+        reply = session
+            .authenticate_keyboard_interactive_respond(responses)
+            .await
+            .map_err(failed)?;
+    }
+}
+
 async fn authenticate(
     session: &mut client::Handle<Client>,
     username: &str,
     method: &AuthMethod,
+    totp_secret: Option<&str>,
 ) -> Result<()> {
     let authenticated = match method {
         AuthMethod::Password { password } => {
@@ -814,18 +943,24 @@ async fn authenticate(
                     .await
                     .map_err(|e| anyhow::anyhow!("Password authentication failed: {}", e))?;
             }
-            authenticated
+            finish_auth(session, username, authenticated, Some(password), totp_secret).await?
         }
         AuthMethod::PublicKey {
             key_path,
             passphrase,
         } => {
-            return authenticate_with_key_files(session, username, key_path, passphrase.as_deref())
-                .await;
+            return authenticate_with_key_files(
+                session,
+                username,
+                key_path,
+                passphrase.as_deref(),
+                totp_secret,
+            )
+            .await;
         }
     };
 
-    if !authenticated.success() {
+    if !authenticated {
         return Err(anyhow::anyhow!(
             "Authentication failed. Please check your credentials and try again."
         ));
@@ -929,6 +1064,7 @@ pub async fn connect_via_ssh_tunnel(
         &mut session,
         &tunnel.username,
         &tunnel.auth_method,
+        None,
         auth_timeout_for(timeout.as_secs()),
     )
     .await?;
@@ -1076,6 +1212,7 @@ impl SshClient {
             &mut ssh_session,
             &config.username,
             &config.auth_method,
+            config.totp_secret.as_deref(),
             auth_timeout_for(config.connect_timeout),
         )
         .await?;
@@ -1101,6 +1238,9 @@ impl SshClient {
     /// authenticates in time is returned (possibly fewer than `count`,
     /// possibly none); the transfer falls back to the main session.
     ///
+    /// Connections with an authenticator secret dial nothing either: each extra
+    /// login would spend a one-time code, and servers rate-limit those.
+    ///
     /// `window_size` is the channel window the dialed connections advertise:
     /// uploads keep the full [`CHANNEL_WINDOW_SIZE`], parallel downloads use
     /// the smaller [`sftp_transfer::DOWNLOAD_CONN_WINDOW_SIZE`] so the
@@ -1115,7 +1255,11 @@ impl SshClient {
         let Some(config) = &self.config else {
             return Vec::new();
         };
-        if config.tunnel.is_some() || config.proxy.is_some() || count == 0 {
+        if config.tunnel.is_some()
+            || config.proxy.is_some()
+            || config.totp_secret.is_some()
+            || count == 0
+        {
             return Vec::new();
         }
         let timeout = Duration::from_secs(config.connect_timeout.max(1));
@@ -1153,6 +1297,7 @@ impl SshClient {
                     &mut session,
                     &config.username,
                     &config.auth_method,
+                    config.totp_secret.as_deref(),
                     auth_timeout_for(timeout.as_secs()),
                 )
                 .await?;

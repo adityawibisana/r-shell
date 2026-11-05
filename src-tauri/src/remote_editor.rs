@@ -136,6 +136,7 @@ mod tests {
                     auth_method: SftpAuthMethod::Password {
                         password: "testpass".into(),
                     },
+                    totp_secret: None,
                     tunnel: None,
                     host_key_policy: HostKeyPolicy::Off,
                     connect_timeout: 10,

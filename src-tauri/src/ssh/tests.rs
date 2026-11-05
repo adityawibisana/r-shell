@@ -25,6 +25,7 @@ mod tests {
             host_key_policy: crate::ssh::HostKeyPolicy::default(),
             connect_timeout: 3,
             tunnel: None,
+            totp_secret: None,
             x11: None,
         }
     }
@@ -137,6 +138,7 @@ mod tests {
             host_key_policy: crate::ssh::HostKeyPolicy::default(),
             connect_timeout: 3,
             tunnel: None,
+            totp_secret: None,
             x11: None,
         };
 
@@ -252,6 +254,7 @@ mod tests {
             host_key_policy: crate::ssh::HostKeyPolicy::default(),
             connect_timeout: 3,
             tunnel: None,
+                totp_secret: None,
                 x11: None,
         }
     }
@@ -461,6 +464,7 @@ mod shell_integration_tests {
                 host_key_policy: crate::ssh::HostKeyPolicy::default(),
                 connect_timeout: 3,
                 tunnel: None,
+                    totp_secret: None,
                     x11: None,
             })
             .await
@@ -505,6 +509,7 @@ mod shell_integration_tests {
                 host_key_policy: crate::ssh::HostKeyPolicy::default(),
                 connect_timeout: 3,
                 tunnel: None,
+                    totp_secret: None,
                     x11: None,
             })
             .await
@@ -576,6 +581,7 @@ mod shell_integration_tests {
                         password: "testpass".to_string(),
                     },
                 }),
+                totp_secret: None,
                 x11: None,
             })
             .await
@@ -704,6 +710,7 @@ mod shell_integration_tests {
                 host_key_policy: crate::ssh::HostKeyPolicy::default(),
                 connect_timeout: 3,
                 tunnel: None,
+                    totp_secret: None,
                     x11: None,
             })
             .await
@@ -750,6 +757,7 @@ mod shell_integration_tests {
                 keepalive_interval: Some(60),
                 keepalive_max: Some(3),
                 proxy: None,
+                totp_secret: None,
                 x11: None,
                 host_key_policy: crate::ssh::HostKeyPolicy::default(),
                 connect_timeout: 3,
@@ -870,6 +878,7 @@ mod shell_integration_tests {
                 host_key_policy: crate::ssh::HostKeyPolicy::default(),
                 connect_timeout: 3,
                 tunnel: None,
+                    totp_secret: None,
                     x11: None,
             })
             .await
@@ -929,6 +938,7 @@ mod shell_integration_tests {
                     host_key_policy: crate::ssh::HostKeyPolicy::default(),
                     connect_timeout: 3,
                     tunnel: None,
+                        totp_secret: None,
                         x11: None,
                 })
                 .await
@@ -1169,6 +1179,7 @@ mod shell_integration_tests {
                     key_path: fixture_key.to_string_lossy().into_owned(),
                     passphrase: None,
                 },
+                None,
                 crate::ssh::auth_timeout_for(3),
             )
             .await
@@ -1636,6 +1647,7 @@ mod key_loading_tests {
             host_key_policy: crate::ssh::HostKeyPolicy::default(),
             connect_timeout: 3,
             tunnel: None,
+            totp_secret: None,
             x11: None,
         };
 
@@ -1913,6 +1925,7 @@ mod x11_e2e_tests {
             host_key_policy,
             connect_timeout: 10,
             tunnel: None,
+            totp_secret: None,
             x11: Some(X11Config {
                 enabled,
                 display: display.map(str::to_string),
@@ -2270,6 +2283,7 @@ mod auth_timeout_tests {
             &AuthMethod::Password {
                 password: "secret".to_string(),
             },
+            None,
             Duration::from_millis(300),
         )
         .await
@@ -2282,6 +2296,162 @@ mod auth_timeout_tests {
             "timeout must fire near its deadline, took {:?}",
             start.elapsed()
         );
+    }
+
+    /// A server configured with `AuthenticationMethods
+    /// publickey,keyboard-interactive`: the key is only a partial success, and
+    /// login completes by answering the code prompt.
+    struct SecondFactorAuth(Arc<std::sync::atomic::AtomicUsize>, bool);
+
+    const SECOND_FACTOR_SECRET: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+
+    impl russh::server::Handler for SecondFactorAuth {
+        type Error = russh::Error;
+
+        async fn auth_publickey(
+            &mut self,
+            _user: &str,
+            _key: russh::server::VerifiedPublicKey<'_>,
+        ) -> Result<russh::server::Auth, Self::Error> {
+            Ok(russh::server::Auth::Reject {
+                proceed_with_methods: Some(russh::MethodSet::from(
+                    &[russh::MethodKind::KeyboardInteractive][..],
+                )),
+                partial_success: true,
+            })
+        }
+
+        async fn auth_keyboard_interactive<'a>(
+            &'a mut self,
+            _user: &str,
+            _submethods: &str,
+            response: Option<russh::server::Response<'a>>,
+        ) -> Result<russh::server::Auth, Self::Error> {
+            let Some(mut response) = response else {
+                return Ok(russh::server::Auth::Partial {
+                    name: "".into(),
+                    instructions: "".into(),
+                    prompts: vec![("Verification code: ".into(), false)].into(),
+                });
+            };
+            let code = response.next().unwrap_or_default();
+            // Any fresh six digits pass (the code maths has its own RFC
+            // vectors), and like DISALLOW_REUSE, the first code is refused.
+            let attempt = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if self.1 && attempt == 0 {
+                return Ok(russh::server::Auth::Reject {
+                    proceed_with_methods: Some(russh::MethodSet::from(
+                        &[russh::MethodKind::KeyboardInteractive][..],
+                    )),
+                    partial_success: false,
+                });
+            }
+            if code.len() == 6 && code.iter().all(u8::is_ascii_digit) {
+                Ok(russh::server::Auth::Accept)
+            } else {
+                Ok(russh::server::Auth::reject())
+            }
+        }
+    }
+
+    struct SecondFactorServer(Arc<std::sync::atomic::AtomicUsize>, bool);
+
+    impl russh::server::Server for SecondFactorServer {
+        type Handler = SecondFactorAuth;
+
+        fn new_client(&mut self, _peer_addr: Option<std::net::SocketAddr>) -> Self::Handler {
+            SecondFactorAuth(self.0.clone(), self.1)
+        }
+    }
+
+    async fn login_with_second_factor(
+        secret: Option<&str>,
+        refuse_first_code: bool,
+    ) -> anyhow::Result<()> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let host_key = PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap();
+        let server_config = Arc::new(russh::server::Config {
+            keys: vec![host_key],
+            ..russh::server::Config::default()
+        });
+        tokio::spawn(async move {
+            let mut server = SecondFactorServer(Default::default(), refuse_first_code);
+            let running = server.run_on_socket(server_config, &listener);
+            let _ = running.await;
+        });
+
+        let client_key = PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join("id_ed25519");
+        std::fs::write(
+            &key_path,
+            client_key
+                .to_openssh(russh::keys::ssh_key::LineEnding::LF)
+                .unwrap()
+                .as_bytes(),
+        )
+        .unwrap();
+
+        let (handler, _report) = Client::with_known_hosts(
+            "127.0.0.1",
+            port,
+            None,
+            HostKeyPolicy::Off,
+            crate::ssh::fresh_x11_registry(),
+        );
+        let mut session = russh::client::connect(
+            Arc::new(russh::client::Config::default()),
+            ("127.0.0.1", port),
+            handler,
+        )
+        .await
+        .expect("handshake against the in-process server");
+
+        authenticate_session(
+            &mut session,
+            "user",
+            &AuthMethod::PublicKey {
+                key_path: key_path.to_string_lossy().into_owned(),
+                passphrase: None,
+            },
+            secret,
+            Duration::from_secs(5),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn key_login_completes_with_an_authenticator_code() {
+        login_with_second_factor(Some(SECOND_FACTOR_SECRET), false)
+            .await
+            .expect("key + code login");
+    }
+
+    #[tokio::test]
+    async fn a_refused_code_is_retried_with_the_next_one() {
+        // A secret of its own: steps are claimed per secret, process-wide.
+        login_with_second_factor(Some("MFRGGZDFMZTWQ2LK"), true)
+            .await
+            .expect("second code passes");
+    }
+
+    #[tokio::test]
+    async fn key_login_without_a_secret_says_what_is_missing() {
+        let message = login_with_second_factor(None, false)
+            .await
+            .expect_err("second factor is required")
+            .to_string();
+        assert!(message.contains("Authenticator"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn an_invalid_secret_surfaces_instead_of_sending_a_bad_code() {
+        let message = login_with_second_factor(Some("not base32!"), false)
+            .await
+            .expect_err("secret cannot be decoded")
+            .to_string();
+        assert!(message.contains("not valid"), "{message}");
     }
 
     #[test]

@@ -198,6 +198,19 @@ describe('buildSshConnectRequest tunnel fields', () => {
   });
 });
 
+describe('authenticator secret', () => {
+  it('is sent on SSH and SFTP requests when set', () => {
+    const source = { ...baseSource, totpSecret: ' JBSWY3DPEHPK3PXP\n' };
+    expect(buildSshConnectRequest('c1', source).totp_secret).toBe('JBSWY3DPEHPK3PXP');
+    expect(buildSftpConnectRequest('c1', source).totp_secret).toBe('JBSWY3DPEHPK3PXP');
+  });
+
+  it('is null when blank', () => {
+    expect(buildSshConnectRequest('c1', baseSource).totp_secret).toBeNull();
+    expect(buildSftpConnectRequest('c1', { ...baseSource, totpSecret: '  ' }).totp_secret).toBeNull();
+  });
+});
+
 describe('buildSftpConnectRequest', () => {
   it('builds a basic SFTP request with defaults', () => {
     const req = buildSftpConnectRequest('sftp-1', baseSource);

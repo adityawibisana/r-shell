@@ -1,8 +1,8 @@
 /**
  * Credential encryption for locally stored connection secrets.
  *
- * Secrets (SSH passwords, key passphrases, proxy/VNC passwords, the sudo
- * password) are encrypted
+ * Secrets (SSH passwords, key passphrases, authenticator secrets, proxy/VNC
+ * passwords, the sudo password) are encrypted
  * with AES-256-GCM on the Rust side using an app master key that lives in the
  * OS keychain (created on first use, one keychain entry for the whole app).
  * Dev/e2e builds never touch the keychain — every rebuild changes the ad-hoc
@@ -21,6 +21,7 @@ import { invoke } from '@tauri-apps/api/core';
 export const SECRET_FIELDS = [
   'password',
   'passphrase',
+  'totpSecret',
   'proxyPassword',
   'vncPassword',
   'tunnelPassword',

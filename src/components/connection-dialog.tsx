@@ -54,6 +54,8 @@ export interface ConnectionConfig {
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
+  /** Base32 authenticator secret for servers that ask for a one-time code; stored like the password. */
+  totpSecret?: string;
   /** Typed into the terminal from its right-click menu; stored like the password. */
   sudoPassword?: string;
   /** Free text kept for the host; shown and stored as is. */
@@ -127,6 +129,7 @@ type StoredSecrets = Record<SecretField, string>;
 const EMPTY_STORED_SECRETS: StoredSecrets = {
   password: '',
   passphrase: '',
+  totpSecret: '',
   proxyPassword: '',
   vncPassword: '',
   tunnelPassword: '',
@@ -210,6 +213,7 @@ export function ConnectionDialog({
     password: '',
     privateKeyPath: '',
     passphrase: '',
+    totpSecret: '',
     sudoPassword: '',
     notes: '',
     proxyType: 'none',
@@ -319,6 +323,7 @@ export function ConnectionDialog({
         setPreviousSecrets({
           password: editingConnection.password ?? '',
           passphrase: editingConnection.passphrase ?? '',
+          totpSecret: editingConnection.totpSecret ?? '',
           proxyPassword: editingConnection.proxyPassword ?? '',
           vncPassword: editingConnection.vncPassword ?? '',
           tunnelPassword: editingConnection.tunnelPassword ?? '',
@@ -330,6 +335,7 @@ export function ConnectionDialog({
         // empty with a hint below. Typing a new value replaces the stored one.
         merged.password = '';
         merged.passphrase = '';
+        merged.totpSecret = '';
         merged.proxyPassword = '';
         merged.vncPassword = '';
         merged.tunnelPassword = '';
@@ -439,6 +445,7 @@ export function ConnectionDialog({
     const result: Pick<ConnectionConfig, SecretField> = {
       password: '',
       passphrase: '',
+      totpSecret: '',
       proxyPassword: '',
       vncPassword: '',
       tunnelPassword: '',
@@ -546,6 +553,7 @@ export function ConnectionDialog({
             password: sealedSecrets.password,
             privateKeyPath: config.privateKeyPath,
             passphrase: sealedSecrets.passphrase,
+            totpSecret: sealedSecrets.totpSecret,
             ftpsEnabled: config.ftpsEnabled,
             ftpsVerifyCert: config.ftpsVerifyCert,
             proxyType: config.proxyType,
@@ -585,6 +593,7 @@ export function ConnectionDialog({
             password: sealedSecrets.password,
             privateKeyPath: config.privateKeyPath,
             passphrase: sealedSecrets.passphrase,
+            totpSecret: sealedSecrets.totpSecret,
             ftpsEnabled: config.ftpsEnabled,
             ftpsVerifyCert: config.ftpsVerifyCert,
             proxyType: config.proxyType,
@@ -640,6 +649,7 @@ export function ConnectionDialog({
         password: sealedSecrets.password,
         privateKeyPath: config.privateKeyPath,
         passphrase: sealedSecrets.passphrase,
+        totpSecret: sealedSecrets.totpSecret,
         proxyType: config.proxyType,
         proxyHost: config.proxyHost,
         proxyPort: config.proxyPort,
@@ -674,6 +684,7 @@ export function ConnectionDialog({
         password: sealedSecrets.password,
         privateKeyPath: config.privateKeyPath,
         passphrase: sealedSecrets.passphrase,
+        totpSecret: sealedSecrets.totpSecret,
         proxyType: config.proxyType,
         proxyHost: config.proxyHost,
         proxyPort: config.proxyPort,
@@ -805,6 +816,7 @@ const handleCancelConnectionAttempt = async () => {
       password: sealed.password,
       privateKeyPath: config.privateKeyPath,
       passphrase: sealed.passphrase,
+      totpSecret: sealed.totpSecret,
       ftpsEnabled: config.ftpsEnabled,
       ftpsVerifyCert: config.ftpsVerifyCert,
       proxyType: config.proxyType,
@@ -1172,6 +1184,23 @@ const handleCancelConnectionAttempt = async () => {
                         onChange={(e) => updateConfig({ passphrase: e.target.value })}
                       />
                     </div>
+                  </div>
+                )}
+
+                {(config.protocol === 'SSH' || config.protocol === 'SFTP') && (
+                  <div className="space-y-2">
+                    <Label htmlFor="totp-secret">{t('connectionDialog.label.authenticator')}</Label>
+                    <PasswordInput
+                      id="totp-secret"
+                      placeholder={
+                        previousSecrets.totpSecret
+                          ? t('connectionDialog.placeholder.savedAuthenticator')
+                          : t('connectionDialog.placeholder.authenticator')
+                      }
+                      value={config.totpSecret}
+                      onChange={(e) => updateConfig({ totpSecret: e.target.value })}
+                    />
+                    <p className="text-xs text-muted-foreground">{t('connectionDialog.hint.authenticator')}</p>
                   </div>
                 )}
 

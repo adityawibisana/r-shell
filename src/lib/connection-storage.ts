@@ -41,6 +41,8 @@ export interface ConnectionData {
   password?: string; // Note: In production, this should be encrypted
   privateKeyPath?: string;
   passphrase?: string;
+  /** Base32 authenticator secret for servers that ask for a one-time code; sealed at rest. */
+  totpSecret?: string;
   /** Typed into the terminal on request (right-click menu); sealed at rest. */
   sudoPassword?: string;
   // FTP-specific

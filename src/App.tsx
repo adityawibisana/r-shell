@@ -622,7 +622,9 @@ function AppContent() {
 
     // A configured Connection Timeout above the restore default must not be
     // raced to death by this wrapper — take the larger of the two.
-    const connectTimeout = effectiveConnectTimeoutMs(getConnectionTimeoutSetting());
+    // A login with an authenticator secret may wait out one 30 s code step.
+    const connectTimeout = effectiveConnectTimeoutMs(getConnectionTimeoutSetting())
+      + (connectionData.totpSecret ? 30_000 : 0);
     const isDesktop = tab.tabType === 'desktop';
     const isFileBrowser = tab.tabType === 'file-browser'
       || (!isDesktop && (tab.protocol === 'SFTP' || tab.protocol === 'FTP'));

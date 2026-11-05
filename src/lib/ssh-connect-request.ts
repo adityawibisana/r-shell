@@ -45,6 +45,7 @@ export interface SshConnectRequestSource {
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
+  totpSecret?: string;
   compression?: boolean;
   keepAlive?: boolean;
   keepAliveInterval?: number;
@@ -76,6 +77,7 @@ export interface SshConnectRequest {
   password: string | null;
   key_path: string | null;
   passphrase: string | null;
+  totp_secret: string | null;
   /** See `HostKeyPolicy`; derived from Settings unless overridden for a retry. */
   host_key_policy: HostKeyPolicy;
   /** With `accept-new`: the endpoint (target or jump host) whose changed key the user confirmed. */
@@ -131,6 +133,7 @@ export function buildSshConnectRequest(
     password: source.password ?? null,
     key_path: source.privateKeyPath || null,
     passphrase: source.passphrase || null,
+    totp_secret: source.totpSecret?.trim() || null,
     host_key_policy: getHostKeyPolicy(),
     connect_timeout: getConnectionTimeoutSetting(),
     compression: source.compression !== false,
@@ -163,6 +166,7 @@ export interface SftpConnectRequestSource {
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
+  totpSecret?: string;
   // SSH tunnel (jump host)
   tunnelEnabled?: boolean;
   tunnelHost?: string;
@@ -183,6 +187,7 @@ export interface SftpConnectRequest {
   password: string | null;
   key_path: string | null;
   passphrase: string | null;
+  totp_secret: string | null;
   /** Same policy as SSH sessions; derived from the Settings switch. */
   host_key_policy: HostKeyPolicy;
   /** Seconds; `null` keeps the backend default (see `getConnectionTimeoutSetting`). */
@@ -218,6 +223,7 @@ export function buildSftpConnectRequest(
     password: source.password || '',
     key_path: source.privateKeyPath || null,
     passphrase: source.passphrase || null,
+    totp_secret: source.totpSecret?.trim() || null,
     host_key_policy: getHostKeyPolicy(),
     connect_timeout: getConnectionTimeoutSetting(),
     tunnel_enabled: tunnelEnabled,
