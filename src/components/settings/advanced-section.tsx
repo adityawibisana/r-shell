@@ -11,7 +11,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Separator } from '../ui/separator';
 import { Checkbox } from '../ui/checkbox';
 import { Monitor, Upload, Download, RefreshCw, Copy, Info } from 'lucide-react';
-import { exportAllConfig, importAllConfig } from '@/lib/config-export-import';
+import {
+  exportAllConfig,
+  hasExportableSecrets,
+  importAllConfig,
+  UnreadableSecretError,
+  type ImportOptions,
+} from '@/lib/config-export-import';
+import { ConfigPassphraseDialog, type PassphraseEntry } from './config-passphrase-dialog';
 import {
   DEFAULT_UPDATE_CONTEXT,
   isCurrentChannelEligible,
@@ -48,16 +55,83 @@ export function AdvancedSection({
   const [importMerge, setImportMerge] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  // Off by default on purpose: carrying secrets is a per-export decision.
+  const [exportSecrets, setExportSecrets] = useState(false);
+  const [passphraseRequest, setPassphraseRequest] = useState<{
+    mode: 'export' | 'import';
+    hint?: string;
+    onSubmit: (entry: PassphraseEntry) => Promise<boolean>;
+    onCancel: () => void;
+  } | null>(null);
 
   const currentChannelEligible = isCurrentChannelEligible(updateContext ?? DEFAULT_UPDATE_CONTEXT);
   const homebrewManaged = updateContext?.homebrewManaged ?? false;
   const channelValue =
     updateChannel === 'current' && currentChannelEligible ? 'current' : 'stable';
 
+  const requestExportPassphrase = () =>
+    new Promise<PassphraseEntry | null>((resolve) => {
+      setPassphraseRequest({
+        mode: 'export',
+        onSubmit: (entry) => {
+          setPassphraseRequest(null);
+          resolve(entry);
+          return Promise.resolve(true);
+        },
+        onCancel: () => {
+          setPassphraseRequest(null);
+          resolve(null);
+        },
+      });
+    });
+
+  // The dialog stays open until a passphrase works, so a typo costs one retype
+  // rather than picking the file again.
+  const unlockSecrets: NonNullable<ImportOptions['unlockSecrets']> = (hint, attempt) =>
+    new Promise<void>((resolve, reject) => {
+      setPassphraseRequest({
+        mode: 'import',
+        hint,
+        onSubmit: async ({ passphrase }) => {
+          try {
+            if (!(await attempt(passphrase))) return false;
+            resolve();
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          }
+          setPassphraseRequest(null);
+          return true;
+        },
+        onCancel: () => {
+          setPassphraseRequest(null);
+          resolve();
+        },
+      });
+    });
+
+  const describeError = (error: unknown) => {
+    if (error instanceof UnreadableSecretError) {
+      return t('settings.advanced.secretUnreadable', { name: error.connectionName });
+    }
+    return error instanceof Error ? error.message : String(error);
+  };
+
   const handleExportConfig = async () => {
     setIsExporting(true);
     try {
-      const saved = await exportAllConfig();
+      const withSecrets = exportSecrets && hasExportableSecrets();
+      if (exportSecrets && !withSecrets) {
+        notify.info(t('settings.advanced.noSecretsToExport'));
+      }
+      const entry = withSecrets ? await requestExportPassphrase() : undefined;
+      if (entry === null) {
+        notify.info(t('settings.advanced.exportCancelled'));
+        return;
+      }
+      const saved = await exportAllConfig({
+        secretsPassphrase: entry?.passphrase,
+        secretsHint: entry?.hint,
+      });
       if (saved) {
         notify.success(t('settings.advanced.exportSuccess'));
       } else {
@@ -65,9 +139,7 @@ export function AdvancedSection({
       }
     } catch (error) {
       console.error('[export-config]', error);
-      notify.error(t('settings.advanced.exportFailed'), {
-        description: error instanceof Error ? error.message : String(error),
-      });
+      notify.error(t('settings.advanced.exportFailed'), { description: describeError(error) });
     } finally {
       setIsExporting(false);
     }
@@ -76,7 +148,7 @@ export function AdvancedSection({
   const handleImportConfig = async () => {
     setIsImporting(true);
     try {
-      const result = await importAllConfig(importMerge);
+      const result = await importAllConfig(importMerge, { unlockSecrets });
       if (result) {
         notify.success(t('settings.advanced.importSuccess'), {
           description: t('settings.advanced.importSuccessDesc', {
@@ -90,9 +162,7 @@ export function AdvancedSection({
       }
     } catch (error) {
       console.error('[import-config]', error);
-      notify.error(t('settings.advanced.importFailed'), {
-        description: error instanceof Error ? error.message : String(error),
-      });
+      notify.error(t('settings.advanced.importFailed'), { description: describeError(error) });
     } finally {
       setIsImporting(false);
     }
@@ -105,7 +175,7 @@ export function AdvancedSection({
     settingMatchesQuery(query, [tt(labelKey), englishText(labelKey), ...aliases]);
 
   const showUpdates = show('settings.updates.channel.label', 'update channel proxy check version');
-  const showBackup = show('settings.advanced.configBackup', 'export import backup config');
+  const showBackup = show('settings.advanced.configBackup', 'export import backup config secret');
 
   if (!showUpdates && !showBackup) {
     return null;
@@ -261,16 +331,33 @@ export function AdvancedSection({
                       {t('settings.advanced.exportConfigDesc')}
                     </p>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleExportConfig}
-                    disabled={isExporting || isImporting}
-                    className="gap-1.5 shrink-0"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    {t('settings.advanced.exportConfig')}
-                  </Button>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="export-secrets"
+                        aria-label={t('settings.advanced.secretExportHint')}
+                        title={t('settings.advanced.secretExportHint')}
+                        checked={exportSecrets}
+                        onCheckedChange={setExportSecrets}
+                      />
+                      <label
+                        htmlFor="export-secrets"
+                        className="text-xs text-muted-foreground cursor-pointer select-none"
+                      >
+                        {t('settings.advanced.secretToggle')}
+                      </label>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExportConfig}
+                      disabled={isExporting || isImporting}
+                      className="gap-1.5"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      {t('settings.advanced.exportConfig')}
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between gap-4 p-3 rounded-lg border border-border bg-card">
@@ -308,6 +395,15 @@ export function AdvancedSection({
                 </div>
               </div>
             </div>
+
+            {passphraseRequest && (
+              <ConfigPassphraseDialog
+                mode={passphraseRequest.mode}
+                hint={passphraseRequest.hint}
+                onSubmit={passphraseRequest.onSubmit}
+                onCancel={passphraseRequest.onCancel}
+              />
+            )}
           </>
         )}
       </CardContent>

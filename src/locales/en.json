@@ -404,7 +404,7 @@
       "configBackup": "Config Backup",
       "configBackupDesc": "Export or import your full configuration to transfer connections and settings to another machine.",
       "exportConfig": "Export Config",
-      "exportConfigDesc": "Save all connections, settings and preferences to a JSON file. Passwords and other credentials are not included.",
+      "exportConfigDesc": "Save all connections, settings and preferences to a JSON file. Passwords and other credentials are not included unless Secret is on.",
       "importConfig": "Import Config",
       "importConfigDesc": "Restore configuration from a previously exported JSON file.",
       "exportSuccess": "Configuration exported successfully",
@@ -414,8 +414,26 @@
       "importCancelled": "Import cancelled",
       "importFailed": "Import failed",
       "exportFailed": "Export failed",
-      "passwordWarning": "No passwords or credentials are included in exports — neither plaintext nor encrypted. You'll need to re-enter credentials after importing on another machine.",
-      "mergeOption": "Merge with existing"
+      "passwordWarning": "No passwords or credentials are included in exports unless you turn on Secret, which encrypts them with a passphrase you choose. Without it, you'll need to re-enter credentials after importing on another machine.",
+      "mergeOption": "Merge with existing",
+      "secretToggle": "Secret",
+      "secretExportHint": "Also save connection secrets, encrypted with a passphrase",
+      "secretUnreadable": "The saved credentials of \"{{name}}\" can't be decrypted. Re-enter them, or turn off Secret to export without credentials.",
+      "passphrase": {
+        "exportTitle": "Encrypt secrets",
+        "exportDesc": "Choose a passphrase to protect the secrets in this export. You'll need it to import them, and they can't be recovered without it.",
+        "importTitle": "Decrypt secrets",
+        "importDesc": "Enter the passphrase chosen when this file was exported.",
+        "label": "Passphrase",
+        "confirm": "Confirm passphrase",
+        "continue": "Continue",
+        "mismatch": "The passphrases don't match.",
+        "wrong": "The passphrase is incorrect, or the file was modified.",
+        "hintOptional": "Hint (optional)",
+        "hintDesc": "Shown when importing. It's saved unencrypted in the file, so anyone with the file can read it.",
+        "hint": "Hint"
+      },
+      "noSecretsToExport": "No saved secrets to include, so this export isn't encrypted."
     },
     "language": {
       "label": "Language",

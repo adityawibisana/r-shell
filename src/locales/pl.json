@@ -406,7 +406,7 @@
       "configBackup": "Kopia zapasowa konfiguracji",
       "configBackupDesc": "Wyeksportuj lub zaimportuj pełną konfigurację, aby przenieść połączenia i ustawienia na inny komputer.",
       "exportConfig": "Eksportuj konfigurację",
-      "exportConfigDesc": "Zapisz wszystkie połączenia, ustawienia i preferencje do pliku JSON. Hasła i inne poświadczenia nie są dołączane.",
+      "exportConfigDesc": "Zapisz wszystkie połączenia, ustawienia i preferencje do pliku JSON. Hasła i inne poświadczenia nie są dołączane, chyba że włączona jest opcja Sekrety.",
       "importConfig": "Importuj konfigurację",
       "importConfigDesc": "Przywróć konfigurację z wcześniej wyeksportowanego pliku JSON.",
       "exportSuccess": "Konfiguracja wyeksportowana pomyślnie",
@@ -416,8 +416,26 @@
       "importCancelled": "Anulowano import",
       "importFailed": "Import nie powiódł się",
       "exportFailed": "Eksport nie powiódł się",
-      "passwordWarning": "Wyeksportowany plik nie zawiera żadnych haseł ani poświadczeń (ani jawnych, ani zaszyfrowanych). Po zaimportowaniu na innym urządzeniu należy ponownie wprowadzić poświadczenia.",
-      "mergeOption": "Scal z istniejącymi"
+      "passwordWarning": "Wyeksportowany plik nie zawiera haseł ani poświadczeń, chyba że włączysz opcję Sekrety, która szyfruje je wybranym przez Ciebie hasłem. Bez niej po zaimportowaniu na innym urządzeniu należy ponownie wprowadzić poświadczenia.",
+      "mergeOption": "Scal z istniejącymi",
+      "secretToggle": "Sekrety",
+      "secretExportHint": "Zapisz także sekrety połączeń, zaszyfrowane hasłem",
+      "secretUnreadable": "Nie można odszyfrować zapisanych poświadczeń połączenia „{{name}}”. Wprowadź je ponownie lub wyłącz opcję Sekrety, aby wyeksportować bez poświadczeń.",
+      "passphrase": {
+        "exportTitle": "Zaszyfruj sekrety",
+        "exportDesc": "Wybierz hasło chroniące sekrety w tym eksporcie. Będzie potrzebne przy imporcie, a bez niego nie da się ich odzyskać.",
+        "importTitle": "Odszyfruj sekrety",
+        "importDesc": "Wprowadź hasło wybrane podczas eksportu tego pliku.",
+        "label": "Hasło",
+        "confirm": "Potwierdź hasło",
+        "continue": "Dalej",
+        "mismatch": "Hasła nie są takie same.",
+        "wrong": "Hasło jest nieprawidłowe lub plik został zmodyfikowany.",
+        "hintOptional": "Podpowiedź (opcjonalnie)",
+        "hintDesc": "Wyświetlana podczas importu. Jest zapisana w pliku bez szyfrowania, więc każdy, kto ma plik, może ją odczytać.",
+        "hint": "Podpowiedź"
+      },
+      "noSecretsToExport": "Brak zapisanych sekretów do dołączenia, więc ten eksport nie jest szyfrowany."
     },
     "language": {
       "label": "Język",

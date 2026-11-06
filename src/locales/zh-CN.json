@@ -404,7 +404,7 @@
       "configBackup": "配置备份",
       "configBackupDesc": "导出或导入完整配置，以便将连接和设置迁移到另一台设备。",
       "exportConfig": "导出配置",
-      "exportConfigDesc": "将所有连接、设置和偏好保存为 JSON 文件。不包含密码和其他凭据。",
+      "exportConfigDesc": "将所有连接、设置和偏好保存为 JSON 文件。除非开启“密钥”，否则不包含密码和其他凭据。",
       "importConfig": "导入配置",
       "importConfigDesc": "从之前导出的 JSON 文件恢复配置。",
       "exportSuccess": "配置导出成功",
@@ -414,8 +414,26 @@
       "importCancelled": "已取消导入",
       "importFailed": "导入失败",
       "exportFailed": "导出失败",
-      "passwordWarning": "导出的文件不包含任何密码或凭据（明文与加密形式均不会导出）。导入到其他设备后需重新输入凭据。",
-      "mergeOption": "与现有数据合并"
+      "passwordWarning": "除非开启“密钥”，否则导出的文件不包含任何密码或凭据；开启后，凭据会使用您设置的口令加密。未开启时，导入到其他设备后需重新输入凭据。",
+      "mergeOption": "与现有数据合并",
+      "secretToggle": "密钥",
+      "secretExportHint": "同时保存连接密钥，并使用口令加密",
+      "secretUnreadable": "无法解密“{{name}}”已保存的凭据。请重新输入，或关闭“密钥”以导出不含凭据的文件。",
+      "passphrase": {
+        "exportTitle": "加密密钥",
+        "exportDesc": "请设置一个口令来保护此次导出中的密钥。导入时需要输入该口令，遗失后将无法恢复这些密钥。",
+        "importTitle": "解密密钥",
+        "importDesc": "请输入导出此文件时设置的口令。",
+        "label": "口令",
+        "confirm": "确认口令",
+        "continue": "继续",
+        "mismatch": "两次输入的口令不一致。",
+        "wrong": "口令不正确，或文件已被修改。",
+        "hintOptional": "提示（可选）",
+        "hintDesc": "导入时显示。提示以未加密形式保存在文件中，任何拿到文件的人都能看到。",
+        "hint": "提示"
+      },
+      "noSecretsToExport": "没有可包含的已保存密钥，因此此次导出未加密。"
     },
     "language": {
       "label": "语言",
