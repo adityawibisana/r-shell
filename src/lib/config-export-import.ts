@@ -3,7 +3,8 @@ import { withoutSecrets } from './credential-crypto';
  * Config Export / Import
  *
  * Bundles every piece of user-configurable state (connections, folders,
- * profiles, terminal appearance, editor config, app settings, language)
+ * profiles, quick commands, terminal appearance, editor config, app settings,
+ * language)
  * into a single JSON file so the user can move their setup to another
  * machine with one click.
  */
@@ -28,6 +29,7 @@ import {
   type SecretValues,
 } from './credential-crypto';
 import { ConnectionProfileManager, type ConnectionProfile } from './connection-profiles';
+import { SnippetStorageManager, type CommandSnippet } from './snippet-storage';
 import {
   loadAppearanceSettings,
   saveAppearanceSettings,
@@ -64,6 +66,8 @@ export interface ConfigBundle {
       folders: ConnectionFolder[];
     };
     profiles?: ConnectionProfile[];
+    /** Quick commands (snippets). */
+    snippets?: CommandSnippet[];
     terminalAppearance?: TerminalAppearanceSettings;
     editorConfig?: EditorConfig;
     appSettings?: Record<string, unknown>;
@@ -91,6 +95,7 @@ export interface ExportOptions {
 export interface ImportResult {
   connections: number;
   profiles: number;
+  snippets: number;
   /** Connections whose secrets were restored from the credentials block. */
   credentials: number;
   terminalAppearance: boolean;
@@ -178,6 +183,10 @@ export async function exportAllConfig(options: ExportOptions = {}): Promise<bool
         return clone as unknown as typeof p;
       });
     }
+
+    // Quick commands (snippets)
+    const snippets = SnippetStorageManager.getSnippets();
+    if (snippets.length) bundle.data.snippets = snippets;
 
     // Terminal appearance
     const termAppearance = loadAppearanceSettings();
@@ -356,6 +365,7 @@ export async function applyConfigBundle(
     const result: ImportResult = {
       connections: 0,
       profiles: 0,
+      snippets: 0,
       credentials: 0,
       terminalAppearance: false,
       editorConfig: false,
@@ -430,6 +440,11 @@ export async function applyConfigBundle(
         merge,
       );
       result.profiles = importedCount;
+    }
+
+    // 3b'. Quick commands (snippets) -------------------------------------------
+    if (data.snippets && Array.isArray(data.snippets)) {
+      result.snippets = SnippetStorageManager.importSnippets(data.snippets, merge);
     }
 
     // 3c. Terminal appearance ---------------------------------------------------

@@ -441,7 +441,7 @@
       "exportSuccess": "Konfiguracja wyeksportowana pomyślnie",
       "exportCancelled": "Anulowano eksport",
       "importSuccess": "Konfiguracja zaimportowana pomyślnie",
-      "importSuccessDesc": "Zaimportowano połączenia: {{connections}}, profile: {{profiles}}",
+      "importSuccessDesc": "Zaimportowano połączenia: {{connections}}, profile: {{profiles}}, szybkie polecenia: {{snippets}}",
       "importCancelled": "Anulowano import",
       "importFailed": "Import nie powiódł się",
       "exportFailed": "Eksport nie powiódł się",

@@ -165,6 +165,7 @@ export function AdvancedSection({
         t('settings.advanced.importSuccessDesc', {
           connections: result.connections,
           profiles: result.profiles,
+          snippets: result.snippets,
         }),
       ];
       if (result.credentials > 0) {

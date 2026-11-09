@@ -439,7 +439,7 @@
       "exportSuccess": "配置导出成功",
       "exportCancelled": "已取消导出",
       "importSuccess": "配置导入成功",
-      "importSuccessDesc": "已导入 {{connections}} 个连接、{{profiles}} 个配置文件",
+      "importSuccessDesc": "已导入 {{connections}} 个连接、{{profiles}} 个配置文件、{{snippets}} 个快捷命令",
       "importCancelled": "已取消导入",
       "importFailed": "导入失败",
       "exportFailed": "导出失败",

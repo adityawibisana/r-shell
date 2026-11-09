@@ -163,6 +163,44 @@ export class SnippetStorageManager {
     return true;
   }
 
+  /**
+   * Import snippets from a config bundle. Replace mode swaps the whole list;
+   * merge mode upserts by id, so re-importing the same bundle does not
+   * duplicate entries. Malformed entries are skipped. Returns the number of
+   * snippets taken from the input.
+   */
+  static importSnippets(imported: unknown, merge: boolean = false): number {
+    if (!Array.isArray(imported)) throw new Error('Invalid snippets format');
+    const now = new Date().toISOString();
+    const valid = imported
+      .filter(isValidSnippet)
+      .filter((snippet) => snippet.name.trim() && snippet.command.trim())
+      .map((snippet): CommandSnippet => ({
+        id: snippet.id,
+        name: snippet.name.trim(),
+        command: snippet.command.trim(),
+        description: typeof snippet.description === 'string' && snippet.description.trim()
+          ? snippet.description.trim()
+          : undefined,
+        tags: normalizeTags(snippet.tags),
+        createdAt: typeof snippet.createdAt === 'string' ? snippet.createdAt : now,
+        updatedAt: typeof snippet.updatedAt === 'string' ? snippet.updatedAt : now,
+        usageCount: typeof snippet.usageCount === 'number' ? snippet.usageCount : 0,
+        lastUsedAt: typeof snippet.lastUsedAt === 'string' ? snippet.lastUsedAt : undefined,
+      }));
+
+    const snippets = merge ? this.getSnippets() : [];
+    for (const snippet of valid) {
+      const index = snippets.findIndex(s => s.id === snippet.id);
+      if (index >= 0) snippets[index] = snippet;
+      else snippets.push(snippet);
+    }
+
+    persist(snippets);
+    notifyChanged();
+    return valid.length;
+  }
+
   /** Record a "sent to terminal" use: bumps usageCount and lastUsedAt. */
   static recordSnippetUsage(id: string): void {
     const snippets = this.getSnippets();

@@ -439,7 +439,7 @@
       "exportSuccess": "Configuration exported successfully",
       "exportCancelled": "Export cancelled",
       "importSuccess": "Configuration imported successfully",
-      "importSuccessDesc": "{{connections}} connections, {{profiles}} profiles imported",
+      "importSuccessDesc": "{{connections}} connections, {{profiles}} profiles, {{snippets}} commands imported",
       "importCancelled": "Import cancelled",
       "importFailed": "Import failed",
       "exportFailed": "Export failed",

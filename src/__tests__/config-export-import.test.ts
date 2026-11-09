@@ -15,6 +15,7 @@ import {
 import { openConnectionSecrets } from '../lib/credential-crypto';
 import type { ConfigBundle } from '../lib/config-export-import';
 import { ConnectionProfileManager } from '../lib/connection-profiles';
+import { SnippetStorageManager } from '../lib/snippet-storage';
 import {
   loadAppearanceSettings,
   saveAppearanceSettings,
@@ -86,6 +87,14 @@ function seedLocalStorage(): void {
     port: 22,
     username: 'dev',
     authMethod: 'key',
+  });
+
+  // Quick commands
+  SnippetStorageManager.saveSnippet({
+    id: '',
+    name: 'Tail logs',
+    command: 'tail -f /var/log/syslog',
+    tags: ['logs'],
   });
 
   // Terminal appearance
@@ -539,6 +548,34 @@ describe('importAllConfig', () => {
 
 // ── Round-trip (export → clear → import) ─────────────────────────────────────
 
+describe('quick commands', () => {
+  it('merge mode upserts by id instead of duplicating', async () => {
+    mockSave.mockResolvedValue('/tmp/snippets.json');
+    mockWriteTextFile.mockResolvedValue(undefined);
+    const { exportAllConfig, importAllConfig } = await import('../lib/config-export-import');
+    await exportAllConfig();
+    const json = mockWriteTextFile.mock.calls[0][1] as string;
+    SnippetStorageManager.saveSnippet({ id: '', name: 'Local only', command: 'uptime', tags: [] });
+
+    mockOpen.mockResolvedValue('/tmp/snippets.json');
+    mockReadTextFile.mockResolvedValue(json);
+    const result = await importAllConfig(true);
+
+    expect(result!.snippets).toBe(1);
+    expect(SnippetStorageManager.getSnippets().map(s => s.name).sort()).toEqual(['Local only', 'Tail logs']);
+  });
+
+  it('leaves existing snippets alone when the bundle has none', async () => {
+    mockOpen.mockResolvedValue('/tmp/config.json');
+    mockReadTextFile.mockResolvedValue(JSON.stringify({ version: 1, exportedAt: '', appVersion: '', data: {} }));
+    const { importAllConfig } = await import('../lib/config-export-import');
+    const result = await importAllConfig(false);
+
+    expect(result!.snippets).toBe(0);
+    expect(SnippetStorageManager.getSnippets()).toHaveLength(1);
+  });
+});
+
 describe('export/import round-trip', () => {
   it('exported config can be imported back with all data intact', async () => {
     // 1. Export
@@ -568,10 +605,17 @@ describe('export/import round-trip', () => {
     expect(result).not.toBeNull();
     expect(result!.connections).toBe(2);
     expect(result!.profiles).toBe(1);
+    expect(result!.snippets).toBe(1);
     expect(result!.terminalAppearance).toBe(true);
     expect(result!.editorConfig).toBe(true);
     expect(result!.appSettings).toBe(true);
     expect(result!.language).toBe(true);
+
+    const snippets = SnippetStorageManager.getSnippets();
+    expect(snippets).toHaveLength(1);
+    expect(snippets[0].name).toBe('Tail logs');
+    expect(snippets[0].command).toBe('tail -f /var/log/syslog');
+    expect(snippets[0].tags).toEqual(['logs']);
 
     // Verify data matches what was originally seeded
     const connections = ConnectionStorageManager.getConnections();
