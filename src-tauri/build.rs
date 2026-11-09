@@ -6,6 +6,8 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "authorize_local_file",
+            "backup_open",
+            "backup_seal",
             "cancel_app_quit",
             "cancel_transfer",
             "close_detached_session",
@@ -33,6 +35,7 @@ fn main() {
             "download_remote_file",
             "download_remote_file_confined",
             "editor_dirty_changed",
+            "forget_ssh_key_passphrase",
             "ftp_connect",
             "ftp_disconnect",
             "get_active_connections",
@@ -60,6 +63,7 @@ fn main() {
             "list_remote_files",
             "list_remote_files_recursive",
             "list_socks_proxies",
+            "list_ssh_key_passphrases",
             "open_in_os",
             "rdp_close_native_window",
             "rdp_open_native_window",
@@ -78,6 +82,7 @@ fn main() {
             "sftp_upload_file",
             "ssh_cancel_connect",
             "ssh_connect",
+            "preview_ssh_config_import",
             "ssh_disconnect",
             "ssh_execute_command",
             "ssh_tab_complete",

@@ -725,7 +725,7 @@ export function PtyTerminal({
             sshDeadEscalatedRef.current = true;
             if (onReconnectTab && claimSshDeadEscalation(connectionId)) {
               term.write(`\r\n\x1b[33m${i18n.t('ptyTerminal.sshSessionLost')}\x1b[0m\r\n`);
-              void onReconnectTab(connectionId);
+              void onReconnectTab(connectionId, true);
             } else {
               term.write(`\r\n\x1b[31m${i18n.t('ptyTerminal.sshSessionDeadPermanent')}\x1b[0m\r\n`);
             }
@@ -957,7 +957,7 @@ export function PtyTerminal({
                   sshDeadEscalatedRef.current = true;
                   if (onReconnectTab && claimSshDeadEscalation(connectionId)) {
                     term.write(`\r\n\x1b[33m${i18n.t('ptyTerminal.sshSessionLost')}\x1b[0m\r\n`);
-                    void onReconnectTab(connectionId);
+                    void onReconnectTab(connectionId, true);
                   } else {
                     term.write(`\r\n\x1b[31m${i18n.t('ptyTerminal.sshSessionDeadPermanent')}\x1b[0m\r\n`);
                   }
@@ -1640,25 +1640,28 @@ export function PtyTerminal({
         // xterm theme exactly. The raw terminalThemes[appearance.theme] lookup
         // skips light-mode auto-switching, which left a mismatched dark strip at
         // the bottom of a light terminal (and vice versa).
-        backgroundColor: getThemeAwareTerminalTheme(appearance).background || (terminalThemes[appearance.theme] || defaultTerminalTheme).background || '#1e1e1e',
+        // With a background image, the workspace renders a single continuous
+        // layer behind the app shell (AppBackground) — an opaque container here
+        // would cover it.
+        backgroundColor: appearance.backgroundImage
+          ? 'transparent'
+          : (getThemeAwareTerminalTheme(appearance).background || (terminalThemes[appearance.theme] || defaultTerminalTheme).background || '#1e1e1e'),
       }}
     >
-      {/* Background image layer */}
+      {/* Keep the selected terminal palette readable over either app theme.
+          This tint preserves the single shared image without drawing another
+          copy in each pane. */}
       {appearance.backgroundImage && (
-        <div 
+        <div
+          data-testid="terminal-wallpaper-tint"
+          aria-hidden="true"
           className="absolute inset-0 pointer-events-none"
           style={{
-            backgroundImage: `url(${appearance.backgroundImage})`,
-            backgroundSize: appearance.backgroundImagePosition === 'tile' ? 'auto' : appearance.backgroundImagePosition,
-            backgroundPosition: 'center',
-            backgroundRepeat: appearance.backgroundImagePosition === 'tile' ? 'repeat' : 'no-repeat',
-            opacity: appearance.backgroundImageOpacity / 100,
-            filter: appearance.backgroundImageBlur > 0 ? `blur(${appearance.backgroundImageBlur}px)` : 'none',
-            zIndex: 0,
+            backgroundColor: getThemeAwareTerminalTheme(appearance).background || '#1e1e1e',
+            opacity: 0.85,
           }}
         />
       )}
-      
       {/* Search bar */}
       {searchRef.current && (
         <TerminalSearchBar

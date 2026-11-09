@@ -1,3 +1,4 @@
+import { type SshExtendedOptions, sshExtendedOptions, type SshJumpHost } from '@/lib/ssh-options';
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
@@ -6,8 +7,10 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { KeyPathInput } from './key-path-input';
-import { PasswordInput } from './ui/password-input';
+import { StoredSecretInput } from './stored-secret-input';
 import { Label } from './ui/label';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
+import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 
@@ -17,11 +20,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Separator } from './ui/separator';
 import { ConnectionProfileManager, type ConnectionProfile } from '../lib/connection-profiles';
 import { ConnectionStorageManager, type X11Config } from '../lib/connection-storage';
-import { SECRET_FIELDS, sealSecret, openSecret, type SecretField } from '../lib/credential-crypto';
+import { SECRET_FIELDS, CONNECT_SECRET_FIELDS, isSealed, sealSecret, openSecret, openConnectionSecrets, sealJumpHosts, isPasswordSavingAllowed, type SecretField } from '../lib/credential-crypto';
 import { buildSshConnectRequest } from '../lib/ssh-connect-request';
 import { folderPathFromArg } from '../lib/connection-folder';
 import { APP_SETTINGS_STORAGE_KEY } from '../lib/keyboard-shortcuts';
 import { sshConnect } from '@/lib/ssh-connect';
+import { cancelSshConnect } from '@/lib/ssh-auth-flow';
+import { SshIdentityEditor, SshJumpHostsEditor } from './ssh-options-editor';
 import { notify } from '@/lib/notifications';
 import {
   Server,
@@ -43,14 +48,14 @@ interface ConnectionDialogProps {
   initialFolder?: string;
 }
 
-export interface ConnectionConfig {
+export interface ConnectionConfig extends SshExtendedOptions {
   id?: string;
   name: string;
   protocol: 'SSH' | 'Telnet' | 'Raw' | 'Serial' | 'SFTP' | 'FTP' | 'RDP' | 'VNC';
   host: string;
   port: number;
   username: string;
-  authMethod: 'password' | 'publickey' | 'keyboard-interactive' | 'anonymous';
+  authMethod: 'password' | 'publickey' | 'auto' | 'keyboard-interactive' | 'anonymous';
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
@@ -125,6 +130,59 @@ function mergeWithDefaults(defaults: ConnectionConfig, overrides: ConnectionConf
  * connections.
  */
 type StoredSecrets = Record<SecretField, string>;
+type SavedSecrets = Pick<ConnectionConfig, SecretField> & Pick<SshExtendedOptions, 'jumpHosts'>;
+
+function savedSecretsSource(config: ConnectionConfig): ConnectionConfig {
+  // Failed connect callbacks can carry a decrypted in-memory copy. Retain
+  // credentials from storage so saving the edit never replaces sealed values
+  // with that transient plaintext (which persistence would correctly strip).
+  const stored = config.id ? ConnectionStorageManager.getConnection(config.id) : undefined;
+  if (!stored) return { ...config };
+  const source = { ...config };
+  for (const field of SECRET_FIELDS) {
+    source[field] = isSealed(config[field]) ? config[field] : (stored[field] ?? '');
+  }
+  source.jumpHosts = config.jumpHosts?.map(hop => {
+    const previous = stored.jumpHosts?.find(h =>
+      h.host === hop.host && h.port === hop.port && h.username === hop.username,
+    );
+    return {
+      ...hop,
+      password: previous && !isSealed(hop.password) ? (previous.password ?? '') : hop.password,
+      passphrase: previous && !isSealed(hop.passphrase) ? (previous.passphrase ?? '') : hop.passphrase,
+    };
+  });
+  return source;
+}
+
+function legacyJump(config: ConnectionConfig): SshJumpHost[] | undefined {
+  if (config.jumpHosts !== undefined) return config.jumpHosts;
+  if (!config.tunnelEnabled) return undefined;
+  return [{
+    host: config.tunnelHost ?? '',
+    port: config.tunnelPort ?? 22,
+    username: config.tunnelUsername ?? '',
+    authMethod: config.tunnelAuthMethod ?? 'password',
+    password: config.tunnelPassword,
+    privateKeyPath: config.tunnelKeyPath,
+    passphrase: config.tunnelPassphrase,
+  }];
+}
+function retainedJumpSecrets(
+  hops: SshJumpHost[] | undefined,
+  previous: SshJumpHost[] | undefined,
+): SshJumpHost[] | undefined {
+  return hops?.map(hop => {
+    const saved = previous?.find(h =>
+      h.host === hop.host && h.port === hop.port && h.username === hop.username,
+    );
+    return {
+      ...hop,
+      password: hop.password || saved?.password || (hop.authMethod === 'password' ? '' : undefined),
+      passphrase: hop.passphrase || saved?.passphrase,
+    };
+  });
+}
 
 const EMPTY_STORED_SECRETS: StoredSecrets = {
   password: '',
@@ -137,24 +195,12 @@ const EMPTY_STORED_SECRETS: StoredSecrets = {
   sudoPassword: '',
 };
 
-/**
- * Password-saving master switch from Settings. Only an explicit `false`
- * disables saving — a missing key or unparsable settings keep the current
- * behaviour (saving allowed). Uses the `allowPasswordSaving` key (not the
- * legacy dead `savePasswords` field) since stale `false` values written by
- * the old dead switch must never flip the gate off for existing users.
- */
-function isPasswordSavingAllowed(): boolean {
-  try {
-    const raw = localStorage.getItem(APP_SETTINGS_STORAGE_KEY);
-    if (!raw) return true;
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return true;
-    return (parsed as Record<string, unknown>).allowPasswordSaving !== false;
-  } catch {
-    return true;
-  }
-}
+/** State of the settings probe shown as a dot beside Save / Connect. */
+type ProbeStatus = 'idle' | 'testing' | 'connected' | 'invalid';
+/** Protocols whose settings the probe can check with a throwaway SSH login. */
+const PROBE_PROTOCOLS = new Set<ConnectionConfig['protocol']>(['SSH', 'SFTP']);
+/** Wait for typing to settle before dialing the host. */
+const PROBE_DEBOUNCE_MS = 800;
 
 /**
  * Default protocol for NEW connections, from the Settings "Default Protocol"
@@ -246,6 +292,20 @@ export function ConnectionDialog({
   // blank form field on save resolves back to these — plaintext is never
   // echoed into the form.
   const [previousSecrets, setPreviousSecrets] = useState<StoredSecrets>(EMPTY_STORED_SECRETS);
+  // Stored secrets the user chose to delete; saving writes them as empty.
+  const [removedSecrets, setRemovedSecrets] = useState<SecretField[]>([]);
+  // What a blank field keeps: the stored secret, unless the user removed it.
+  const keptSecret = (field: SecretField) => (removedSecrets.includes(field) ? '' : previousSecrets[field]);
+  const previousJumpHosts = () => {
+    if (!editingConnection) return undefined;
+    const saved = savedSecretsSource(editingConnection);
+    // Removing a legacy tunnel secret also removes the retained value when
+    // that tunnel is converted to the ordered jump-host editor.
+    if (saved.jumpHosts === undefined) {
+      for (const field of removedSecrets) saved[field] = '';
+    }
+    return legacyJump(saved);
+  };
 
   // Track number input display values separately from config to allow
   // the field to be empty while editing — React controlled inputs need
@@ -318,21 +378,27 @@ export function ConnectionDialog({
       // connection never stored (advanced/proxy options), matching the
       // pre-filled values a new connection gets.
       if (editingConnection) {
+        const saved = savedSecretsSource(editingConnection);
         // Remember the stored (sealed) secrets so a blank field on save means
-        // "keep the stored one". The form itself never shows them.
+        // "keep the stored one". The form itself never shows them. A sealed
+        // value handed in is the stored one. For a stored connection anything
+        // else may be plaintext App decrypted for a failed connect (#283),
+        // which storage would strip on save, deleting the secret: take the
+        // sealed value from storage instead.
         setPreviousSecrets({
-          password: editingConnection.password ?? '',
-          passphrase: editingConnection.passphrase ?? '',
-          totpSecret: editingConnection.totpSecret ?? '',
-          proxyPassword: editingConnection.proxyPassword ?? '',
-          vncPassword: editingConnection.vncPassword ?? '',
-          tunnelPassword: editingConnection.tunnelPassword ?? '',
-          tunnelPassphrase: editingConnection.tunnelPassphrase ?? '',
-          sudoPassword: editingConnection.sudoPassword ?? '',
+          password: saved.password ?? '',
+          passphrase: saved.passphrase ?? '',
+          totpSecret: saved.totpSecret ?? '',
+          proxyPassword: saved.proxyPassword ?? '',
+          vncPassword: saved.vncPassword ?? '',
+          tunnelPassword: saved.tunnelPassword ?? '',
+          tunnelPassphrase: saved.tunnelPassphrase ?? '',
+          sudoPassword: saved.sudoPassword ?? '',
         });
+        setRemovedSecrets([]);
         const merged = mergeWithDefaults(defaultConfig, editingConnection);
-        // Stored secrets are never echoed back into the form: the fields stay
-        // empty with a hint below. Typing a new value replaces the stored one.
+        // Stored secrets are never echoed back into the form: the values stay
+        // empty and StoredSecretInput shows a fixed mask with Change / Remove.
         merged.password = '';
         merged.passphrase = '';
         merged.totpSecret = '';
@@ -341,6 +407,7 @@ export function ConnectionDialog({
         merged.tunnelPassword = '';
         merged.tunnelPassphrase = '';
         merged.sudoPassword = '';
+        merged.jumpHosts = merged.jumpHosts?.map(h => ({ ...h, password: '', passphrase: '' }));
         setConfig(merged);
         syncDisplayValues({
           port: editingConnection.port ?? 22,
@@ -357,6 +424,7 @@ export function ConnectionDialog({
         // field on connection B would silently resolve to A's stored secrets.
         setConfig(defaultConfig);
         setPreviousSecrets(EMPTY_STORED_SECRETS);
+        setRemovedSecrets([]);
         setSaveAsConnection(true);
         syncDisplayValues(initialDisplayValues);
       }
@@ -364,18 +432,40 @@ export function ConnectionDialog({
       // Reset connection state when dialog closes
       resetConnectionState();
       setPreviousSecrets(EMPTY_STORED_SECRETS);
+      setRemovedSecrets([]);
     }
   }, [open, editingConnection, initialFolder]);
 
-  const _handleSaveProfile = () => {
+  const secretInput = (field: SecretField, id: string, label: string, placeholder: string) => (
+    <StoredSecretInput
+      id={id}
+      label={label}
+      placeholder={placeholder}
+      value={config[field] ?? ''}
+      onChange={(value) => updateConfig({ [field]: value })}
+      saved={!!previousSecrets[field]}
+      encrypted={isSealed(previousSecrets[field])}
+      removed={removedSecrets.includes(field)}
+      onRemovedChange={(removed) =>
+        setRemovedSecrets((prev) => (removed ? [...prev, field] : prev.filter((f) => f !== field)))
+      }
+      savingDisabled={!isPasswordSavingAllowed()}
+    />
+  );
+
+  const _handleSaveProfile = async () => {
     try {
+      const secrets = await resolveSecretsForSave();
       const profile = ConnectionProfileManager.saveProfile({
+        ...sshExtendedOptions(config),
+        jumpHosts: secrets.jumpHosts,
+        sshConfigSource: undefined,
         name: config.name,
         host: config.host,
         port: config.port,
         username: config.username,
-        authMethod: config.authMethod === 'publickey' ? 'key' : 'password',
-        password: config.password,
+        authMethod: config.authMethod === 'publickey' ? 'key' : config.authMethod === 'auto' ? 'auto' : 'password',
+        password: secrets.password,
         privateKey: config.privateKeyPath,
       });
       setSavedProfiles(ConnectionProfileManager.getProfiles());
@@ -393,7 +483,8 @@ export function ConnectionDialog({
       host: profile.host,
       port: profile.port,
       username: profile.username,
-      authMethod: profile.authMethod === 'key' ? 'publickey' : 'password',
+      ...sshExtendedOptions(profile),
+      authMethod: profile.authMethod === 'key' ? 'publickey' : profile.authMethod,
       password: profile.password,
       privateKeyPath: profile.privateKey,
     });
@@ -424,13 +515,13 @@ export function ConnectionDialog({
 
   /**
    * UX contract for stored secrets: a saved password is NEVER shown back to
-   * the user. When editing a connection that has one, the field stays empty
-   * with a hint ("leave blank to keep the saved password"). An empty field on
-   * save therefore means "keep whatever is stored"; a typed value means
-   * "replace". Returns the secret values ready for persistence — already
+   * the user. When editing a connection that has one, the field shows a fixed
+   * mask with Change / Remove while its value stays empty. An empty value on
+   * save therefore means "keep whatever is stored" (unless removed); a typed
+   * value means "replace". Returns the secret values ready for persistence — already
    * encrypted (sealed) so plaintext never reaches localStorage.
    */
-  const resolveSecretsForSave = async (): Promise<Pick<ConnectionConfig, SecretField>> => {
+  const resolveSecretsForSave = async (): Promise<SavedSecrets> => {
     // Password-saving master switch (Settings) off → never write NEW
     // secrets: the connect request below still uses the typed value from
     // `config`, so the connection itself works, and an edited connection
@@ -438,9 +529,15 @@ export function ConnectionDialog({
     // is what "existing saved credentials are untouched" promises — an
     // empty string here would overwrite them in updateConnection's merge).
     // Typing a replacement secret while the switch is off does not persist
-    // it; turn the switch back on to update stored credentials.
+    // it; turn the switch back on to update stored credentials. Removing a
+    // stored secret stores nothing, so it is honoured either way.
     if (!isPasswordSavingAllowed()) {
-      return { ...previousSecrets };
+      const kept = { ...previousSecrets };
+      for (const field of removedSecrets) kept[field] = '';
+      return {
+        ...kept,
+        jumpHosts: await sealJumpHosts(config.jumpHosts, previousJumpHosts(), false),
+      };
     }
     const result: Pick<ConnectionConfig, SecretField> = {
       password: '',
@@ -460,7 +557,7 @@ export function ConnectionDialog({
       const typed = config[field] ?? '';
       if (typed.length === 0) {
         // Field left blank → keep the previously stored (sealed) value.
-        result[field] = previousSecrets[field];
+        result[field] = keptSecret(field);
       } else {
         // User typed a new value → seal it for storage.
         try {
@@ -471,8 +568,115 @@ export function ConnectionDialog({
         }
       }
     }
-    return result;
+    return {
+      ...result,
+      jumpHosts: await sealJumpHosts(
+        config.jumpHosts,
+        previousJumpHosts(),
+        true,
+      ),
+    };
   };
+
+  /**
+   * Build the connect-only config. The form never echoes stored secrets, so
+   * a blank field while editing means "use the retained credential" — decrypt
+   * it here (plaintext exists transiently in memory only). The persisted
+   * payload keeps the sealed form.
+   */
+  const buildConnectConfig = async (source: ConnectionConfig): Promise<ConnectionConfig> => {
+    const connectConfig: ConnectionConfig = {
+      ...source,
+      jumpHosts: retainedJumpSecrets(
+        source.jumpHosts,
+        previousJumpHosts(),
+      ),
+    };
+    await openConnectionSecrets(connectConfig as unknown as Record<string, unknown>);
+    for (const field of CONNECT_SECRET_FIELDS) {
+      if (connectConfig[field] === '' && keptSecret(field)) {
+        try {
+          connectConfig[field] = await openSecret(keptSecret(field));
+        } catch (error) {
+          // Decrypt failed (keychain hiccup etc.) — leave blank; auth will
+          // fail with a clear error rather than a wrong password.
+          console.error(`[Credential] Failed to decrypt ${field} for connect:`, error);
+        }
+      }
+    }
+    return connectConfig;
+  };
+
+  // Settings probe behind the status dot next to Save / Connect. Each probe
+  // opens a throwaway SSH session under its own id, never prompts (host key,
+  // key unlock), and disconnects as soon as it succeeds. A newer probe or the
+  // dialog closing abandons the one in flight.
+  const probeGenerationRef = useRef(0);
+  const probeIdRef = useRef<string | null>(null);
+  const [probeNonce, setProbeNonce] = useState(0);
+  const [probe, setProbe] = useState<{ status: ProbeStatus; error?: string }>({ status: 'idle' });
+  const requiresUsername = config.authMethod !== 'anonymous' && config.protocol !== 'VNC';
+  const missingRequired = !config.name || !config.host || (requiresUsername && !config.username);
+  // A probe would spend an authenticator code the real login then cannot reuse.
+  const usesTotp = !!config.totpSecret || !!keptSecret('totpSecret');
+  const probeSupported = PROBE_PROTOCOLS.has(config.protocol) && !usesTotp;
+
+  useEffect(() => {
+    const generation = ++probeGenerationRef.current;
+    const abandon = () => {
+      const id = probeIdRef.current;
+      probeIdRef.current = null;
+      if (id) cancelSshConnect(id);
+    };
+    abandon();
+    if (!open || !probeSupported) {
+      setProbe({ status: 'idle' });
+      return abandon;
+    }
+    if (missingRequired) {
+      setProbe({ status: 'invalid', error: t('connectionDialog.status.missingFields') });
+      return abandon;
+    }
+    setProbe({ status: 'testing' });
+    const timer = setTimeout(() => {
+      void (async () => {
+        const probeId = `probe-${crypto.randomUUID()}`;
+        probeIdRef.current = probeId;
+        try {
+          const connectConfig = await buildConnectConfig(config);
+          if (generation !== probeGenerationRef.current) return;
+          const result = await sshConnect(
+            buildSshConnectRequest(probeId, connectConfig),
+            { interactive: false },
+          );
+          if (result.success) {
+            await invoke('ssh_disconnect', { connection_id: probeId }).catch(() => {});
+          }
+          if (generation !== probeGenerationRef.current || result.cancelled) return;
+          setProbe(result.success
+            ? { status: 'connected' }
+            : { status: 'invalid', error: result.error });
+        } catch (error) {
+          if (generation !== probeGenerationRef.current) return;
+          setProbe({ status: 'invalid', error: error instanceof Error ? error.message : String(error) });
+        } finally {
+          if (probeIdRef.current === probeId) probeIdRef.current = null;
+        }
+      })();
+    }, PROBE_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+      abandon();
+    };
+    // buildConnectConfig reads previousSecrets / removedSecrets, listed here.
+  }, [open, config, previousSecrets, removedSecrets, probeSupported, missingRequired, probeNonce]);
+
+  const probeLabel = {
+    idle: '',
+    testing: t('connectionDialog.status.testing'),
+    connected: t('connectionDialog.status.connected'),
+    invalid: t('connectionDialog.status.invalid'),
+  }[probe.status];
 
   const handleConnect = async () => {
     if (isConnecting) {
@@ -508,7 +712,7 @@ export function ConnectionDialog({
     // user's default key (~/.ssh/id_rsa, then id_ed25519).
 
     // Encrypt secrets for persistence (blank field = keep stored value).
-    let sealedSecrets: Pick<ConnectionConfig, SecretField>;
+    let sealedSecrets: SavedSecrets;
     try {
       sealedSecrets = await resolveSecretsForSave();
     } catch {
@@ -517,22 +721,7 @@ export function ConnectionDialog({
       return;
     }
 
-    // Build the connect-only config. The form never echoes stored secrets, so
-    // a blank field while editing means "use the retained credential" — decrypt
-    // it here (plaintext exists transiently in memory only). The persisted
-    // payload above keeps the sealed form.
-    const connectConfig: ConnectionConfig = { ...config };
-    for (const field of SECRET_FIELDS) {
-      if (connectConfig[field] === '' && previousSecrets[field]) {
-        try {
-          connectConfig[field] = await openSecret(previousSecrets[field]);
-        } catch (error) {
-          // Decrypt failed (keychain hiccup etc.) — leave blank; auth will
-          // fail with a clear error rather than a wrong password.
-          console.error(`[Credential] Failed to decrypt ${field} for connect:`, error);
-        }
-      }
-    }
+    const connectConfig = await buildConnectConfig(config);
 
     // For SFTP/FTP/RDP/VNC protocols, delegate connection to App.tsx (via onConnect)
     // which calls the appropriate Tauri commands.
@@ -552,6 +741,8 @@ export function ConnectionDialog({
             authMethod: config.authMethod,
             password: sealedSecrets.password,
             privateKeyPath: config.privateKeyPath,
+            ...sshExtendedOptions(config),
+            jumpHosts: sealedSecrets.jumpHosts,
             passphrase: sealedSecrets.passphrase,
             totpSecret: sealedSecrets.totpSecret,
             ftpsEnabled: config.ftpsEnabled,
@@ -592,6 +783,8 @@ export function ConnectionDialog({
             authMethod: config.authMethod,
             password: sealedSecrets.password,
             privateKeyPath: config.privateKeyPath,
+            ...sshExtendedOptions(config),
+            jumpHosts: sealedSecrets.jumpHosts,
             passphrase: sealedSecrets.passphrase,
             totpSecret: sealedSecrets.totpSecret,
             ftpsEnabled: config.ftpsEnabled,
@@ -648,6 +841,8 @@ export function ConnectionDialog({
         authMethod: config.authMethod,
         password: sealedSecrets.password,
         privateKeyPath: config.privateKeyPath,
+        ...sshExtendedOptions(config),
+        jumpHosts: sealedSecrets.jumpHosts,
         passphrase: sealedSecrets.passphrase,
         totpSecret: sealedSecrets.totpSecret,
         proxyType: config.proxyType,
@@ -683,6 +878,8 @@ export function ConnectionDialog({
         authMethod: config.authMethod,
         password: sealedSecrets.password,
         privateKeyPath: config.privateKeyPath,
+        ...sshExtendedOptions(config),
+        jumpHosts: sealedSecrets.jumpHosts,
         passphrase: sealedSecrets.passphrase,
         totpSecret: sealedSecrets.totpSecret,
         proxyType: config.proxyType,
@@ -722,7 +919,7 @@ export function ConnectionDialog({
       } else {
         // Connection failed — config was already saved above, user can retry from sidebar
         console.error('Connection failed:', result.error);
-        if (cancelRequestedRef.current && result.error?.toLowerCase().includes('cancelled')) {
+        if (result.cancelled || (cancelRequestedRef.current && result.error?.toLowerCase().includes('cancelled'))) {
           notify.info(t('connectionDialog.toast.connectionCancelled'));
         } else {
           notify.error(t('connectionDialog.toast.connectionFailed'), {
@@ -775,6 +972,7 @@ const handleCancelConnectionAttempt = async () => {
     cancelRequestedRef.current = true;
     setIsCancelling(true);
 
+    if (connectionId) cancelSshConnect(connectionId);
     try {
       const response = await invoke<{ success: boolean; error?: string }>('ssh_cancel_connect', {
         connection_id: connectionId
@@ -797,7 +995,7 @@ const handleCancelConnectionAttempt = async () => {
     if (!editingConnection?.id) return;
 
     // Encrypt secrets for persistence (blank field = keep stored value).
-    let sealed: Pick<ConnectionConfig, SecretField>;
+    let sealed: SavedSecrets;
     try {
       sealed = await resolveSecretsForSave();
     } catch {
@@ -815,6 +1013,8 @@ const handleCancelConnectionAttempt = async () => {
       authMethod: config.authMethod,
       password: sealed.password,
       privateKeyPath: config.privateKeyPath,
+      ...sshExtendedOptions(config),
+      jumpHosts: sealed.jumpHosts,
       passphrase: sealed.passphrase,
       totpSecret: sealed.totpSecret,
       ftpsEnabled: config.ftpsEnabled,
@@ -1130,7 +1330,8 @@ const handleCancelConnectionAttempt = async () => {
                     <SelectContent>
                       {getAuthMethods(config.protocol).map((method) => (
                         <SelectItem key={method} value={method}>
-                          {method === 'password' ? t('connectionDialog.authMethod.password') :
+                          {method === 'auto' ? t('openSsh.editor.auto') :
+                           method === 'password' ? t('connectionDialog.authMethod.password') :
                            method === 'publickey' ? t('connectionDialog.authMethod.publicKey') :
                            method === 'keyboard-interactive' ? t('connectionDialog.authMethod.keyboardInteractive') :
                            method === 'anonymous' ? t('connectionDialog.authMethod.anonymous') : method}
@@ -1140,23 +1341,16 @@ const handleCancelConnectionAttempt = async () => {
                   </Select>
                 </div>
 
+                {config.authMethod === 'auto' && <SshIdentityEditor value={config} onChange={updateConfig} />}
+
                 {config.authMethod === 'password' && (
                   <div className="space-y-2">
                     <Label htmlFor="password">{t('connectionDialog.label.password')}</Label>
-                    <PasswordInput
-                      id="password"
-                      placeholder={
-                        previousSecrets.password
-                          ? t('connectionDialog.placeholder.savedPassword')
-                          : t('connectionDialog.placeholder.password')
-                      }
-                      value={config.password}
-                      onChange={(e) => updateConfig({ password: e.target.value })}
-                    />
-                    {previousSecrets.password && (
-                      <p className="text-xs text-muted-foreground">
-                        {t('connectionDialog.hint.savedPasswordKept')}
-                      </p>
+                    {secretInput(
+                      'password',
+                      'password',
+                      t('connectionDialog.label.password'),
+                      t('connectionDialog.placeholder.password'),
                     )}
                   </div>
                 )}
@@ -1177,12 +1371,12 @@ const handleCancelConnectionAttempt = async () => {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="passphrase">{t('connectionDialog.label.passphrase')}</Label>
-                      <PasswordInput
-                        id="passphrase"
-                        placeholder={t('connectionDialog.placeholder.passphrase')}
-                        value={config.passphrase}
-                        onChange={(e) => updateConfig({ passphrase: e.target.value })}
-                      />
+                      {secretInput(
+                        'passphrase',
+                        'passphrase',
+                        t('connectionDialog.label.passphrase'),
+                        t('connectionDialog.placeholder.passphrase'),
+                      )}
                     </div>
                   </div>
                 )}
@@ -1190,16 +1384,12 @@ const handleCancelConnectionAttempt = async () => {
                 {(config.protocol === 'SSH' || config.protocol === 'SFTP') && (
                   <div className="space-y-2">
                     <Label htmlFor="totp-secret">{t('connectionDialog.label.authenticator')}</Label>
-                    <PasswordInput
-                      id="totp-secret"
-                      placeholder={
-                        previousSecrets.totpSecret
-                          ? t('connectionDialog.placeholder.savedAuthenticator')
-                          : t('connectionDialog.placeholder.authenticator')
-                      }
-                      value={config.totpSecret}
-                      onChange={(e) => updateConfig({ totpSecret: e.target.value })}
-                    />
+                    {secretInput(
+                      'totpSecret',
+                      'totp-secret',
+                      t('connectionDialog.label.authenticator'),
+                      t('connectionDialog.placeholder.authenticator'),
+                    )}
                     <p className="text-xs text-muted-foreground">{t('connectionDialog.hint.authenticator')}</p>
                   </div>
                 )}
@@ -1252,16 +1442,12 @@ const handleCancelConnectionAttempt = async () => {
                 {!['SFTP', 'FTP', 'RDP', 'VNC'].includes(config.protocol) && (
                   <div className="space-y-2">
                     <Label htmlFor="sudo-password">{t('connectionDialog.label.sudoPassword')}</Label>
-                    <PasswordInput
-                      id="sudo-password"
-                      placeholder={
-                        previousSecrets.sudoPassword
-                          ? t('connectionDialog.placeholder.savedPassword')
-                          : t('connectionDialog.placeholder.sudoPassword')
-                      }
-                      value={config.sudoPassword}
-                      onChange={(e) => updateConfig({ sudoPassword: e.target.value })}
-                    />
+                    {secretInput(
+                      'sudoPassword',
+                      'sudo-password',
+                      t('connectionDialog.label.sudoPassword'),
+                      t('connectionDialog.placeholder.sudoPassword'),
+                    )}
                     <p className="text-xs text-muted-foreground">{t('connectionDialog.hint.sudoPassword')}</p>
                   </div>
                 )}
@@ -1350,12 +1536,12 @@ const handleCancelConnectionAttempt = async () => {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="proxy-password">{t('connectionDialog.label.proxyPassword')}</Label>
-                        <PasswordInput
-                          id="proxy-password"
-                          placeholder={t('connectionDialog.placeholder.proxyPassword')}
-                          value={config.proxyPassword}
-                          onChange={(e) => updateConfig({ proxyPassword: e.target.value })}
-                        />
+                        {secretInput(
+                          'proxyPassword',
+                          'proxy-password',
+                          t('connectionDialog.label.proxyPassword'),
+                          t('connectionDialog.placeholder.proxyPassword'),
+                        )}
                       </div>
                     </div>
                   </>
@@ -1383,6 +1569,18 @@ const handleCancelConnectionAttempt = async () => {
                 );
               }
 
+              if (config.jumpHosts !== undefined) return (
+                <Card className="gap-4 rounded-lg shadow-none">
+                  <CardHeader><CardTitle>{t('openSsh.fields.jumpHosts')}</CardTitle></CardHeader>
+                  <CardContent>
+                    <SshJumpHostsEditor
+                      value={config.jumpHosts}
+                      onChange={jumpHosts => updateConfig({ jumpHosts })}
+                    />
+                  </CardContent>
+                </Card>
+              );
+
               return (
                 <Card className="gap-4 rounded-lg shadow-none">
                   <CardHeader className="px-5 pt-5">
@@ -1395,6 +1593,10 @@ const handleCancelConnectionAttempt = async () => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4 px-5 last:pb-5">
+                    <Button variant="outline" onClick={() => updateConfig({ jumpHosts: legacyJump(config) ?? [] })}>
+                      {t('openSsh.editor.editChain')}
+                    </Button>
+
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="space-y-0.5">
                         <Label>{t('connectionDialog.tunnel.enable')}</Label>
@@ -1462,16 +1664,11 @@ const handleCancelConnectionAttempt = async () => {
                         {config.tunnelAuthMethod === 'password' && (
                           <div className="space-y-2">
                             <Label htmlFor="tunnel-password">{t('connectionDialog.label.tunnelPassword')}</Label>
-                            <PasswordInput
-                              id="tunnel-password"
-                              placeholder={t('connectionDialog.placeholder.tunnelPassword')}
-                              value={config.tunnelPassword}
-                              onChange={(e) => updateConfig({ tunnelPassword: e.target.value })}
-                            />
-                            {previousSecrets.tunnelPassword && (
-                              <p className="text-xs text-muted-foreground">
-                                {t('connectionDialog.hint.savedPasswordKept')}
-                              </p>
+                            {secretInput(
+                              'tunnelPassword',
+                              'tunnel-password',
+                              t('connectionDialog.label.tunnelPassword'),
+                              t('connectionDialog.placeholder.tunnelPassword'),
                             )}
                           </div>
                         )}
@@ -1489,16 +1686,11 @@ const handleCancelConnectionAttempt = async () => {
                             </div>
                             <div className="space-y-2">
                               <Label htmlFor="tunnel-passphrase">{t('connectionDialog.label.tunnelPassphrase')}</Label>
-                              <PasswordInput
-                                id="tunnel-passphrase"
-                                placeholder={t('connectionDialog.placeholder.tunnelPassphrase')}
-                                value={config.tunnelPassphrase}
-                                onChange={(e) => updateConfig({ tunnelPassphrase: e.target.value })}
-                              />
-                              {previousSecrets.tunnelPassphrase && (
-                                <p className="text-xs text-muted-foreground">
-                                  {t('connectionDialog.hint.savedPasswordKept')}
-                                </p>
+                              {secretInput(
+                                'tunnelPassphrase',
+                                'tunnel-passphrase',
+                                t('connectionDialog.label.tunnelPassphrase'),
+                                t('connectionDialog.placeholder.tunnelPassphrase'),
                               )}
                             </div>
                           </>
@@ -1512,6 +1704,20 @@ const handleCancelConnectionAttempt = async () => {
           </TabsContent>
 
           <TabsContent value="advanced" className="configuration-content min-h-0 flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-4 mt-0 bg-background/50">
+            {(config.protocol === 'SSH' || config.protocol === 'SFTP') && (
+              <div className="space-y-2">
+                <Label htmlFor="ssh-connect-timeout">{t('openSsh.fields.connectTimeout')}</Label>
+                <Input
+                  id="ssh-connect-timeout"
+                  type="number"
+                  min={1}
+                  placeholder={t('openSsh.editor.appDefault')}
+                  value={config.connectTimeout ?? ''}
+                  onChange={e => updateConfig({ connectTimeout: e.target.value ? Number(e.target.value) : undefined })}
+                />
+              </div>
+            )}
+
             {(() => {
               const hiddenFields = getHiddenFields(config.protocol);
               const isCompHidden = hiddenFields.includes('compression');
@@ -1706,7 +1912,7 @@ const handleCancelConnectionAttempt = async () => {
             )}
 
             {/* Action Buttons */}
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end items-center gap-2">
               <Button
                 variant={isConnecting ? "destructive" : "outline"}
                 onClick={handleCancelConnectionAttempt}
@@ -1722,6 +1928,36 @@ const handleCancelConnectionAttempt = async () => {
                 <Button onClick={handleConnect} disabled={isConnecting || isCancelling} className="min-w-[140px]">
                   {isConnecting ? t('connectionDialog.button.connecting') : t('connectionDialog.button.connect')}
                 </Button>
+              )}
+              {probe.status !== 'idle' && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      data-testid="connection-status-indicator"
+                      data-status={probe.status}
+                      aria-label={`${probeLabel}. ${t('connectionDialog.status.retest')}`}
+                      onClick={() => setProbeNonce((n) => n + 1)}
+                      disabled={probe.status === 'testing'}
+                      className="ml-1 flex h-6 w-6 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span
+                        className={cn(
+                          'h-3 w-3 rounded-full',
+                          probe.status === 'connected' && 'bg-green-500',
+                          probe.status === 'invalid' && 'bg-red-500',
+                          probe.status === 'testing' && 'bg-gray-400 animate-pulse',
+                        )}
+                      />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    <p className="font-medium">{probeLabel}</p>
+                    {probe.status === 'invalid' && probe.error && (
+                      <p className="mt-1 break-words opacity-80">{probe.error}</p>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
               )}
             </div>
           </div>

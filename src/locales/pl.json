@@ -186,9 +186,7 @@
       "tunnelPassword": "Wpisz hasło tunelu",
       "tunnelKeyPath": "~/.ssh/id_ed25519",
       "tunnelPassphrase": "Wpisz hasło, jeśli klucz jest zaszyfrowany",
-      "savedPassword": "Pozostaw puste, aby zachować zapisane hasło",
       "authenticator": "Tajny klucz z konfiguracji aplikacji uwierzytelniającej",
-      "savedAuthenticator": "Zapisano. Zostaw puste, aby zachować",
       "sudoPassword": "Wpisywane do terminala na żądanie",
       "notes": "Co chcesz mieć pod ręką dla tego hosta"
     },
@@ -201,7 +199,7 @@
     "desktopInfo": {
       "title": "Pulpit zdalny",
       "rdp": "RDP łączy się z Pulpitem zdalnym systemu Windows. Wymaga danych logowania zgodnych z NLA.",
-      "vnc": "VNC łączy się z dowolnym hostem z serwerem VNC. Uwierzytelnia wyłącznie hasłem."
+      "vnc": "Obsługuje standardowe uwierzytelnianie hasłem VNC. Pozostaw puste hasło, jeśli serwer zezwala na połączenia bez uwierzytelniania."
     },
     "securityNote": {
       "title": "Uwaga dotycząca bezpieczeństwa",
@@ -256,6 +254,13 @@
       "browseKey": "Wybierz plik klucza",
       "browseKeyTitle": "Wybierz klucz prywatny"
     },
+    "status": {
+      "testing": "Testowanie połączenia…",
+      "connected": "Połączono",
+      "invalid": "Nieprawidłowe ustawienia",
+      "missingFields": "Uzupełnij nazwę, host i nazwę użytkownika.",
+      "retest": "Kliknij, aby przetestować ponownie"
+    },
     "toast": {
       "missingFields": "Brak wymaganych pól",
       "missingFieldsDesc": "Wypełnij wszystkie wymagane pola: Nazwa połączenia, Host i Nazwa użytkownika.",
@@ -282,7 +287,6 @@
       "enableDesc": "Przekieruj połączenie przez host pośredniczący (bastion), aby dotrzeć do celu."
     },
     "hint": {
-      "savedPasswordKept": "Dla tego połączenia zapisano hasło. Pozostaw pole puste, aby je zachować, albo wpisz nowe, aby je zastąpić.",
       "authenticator": "Tajny klucz base32 używany przez aplikację uwierzytelniającą. R-Shell odpowiada nim na prośbę serwera o kod weryfikacyjny podczas logowania. Nigdy nie jest tu pokazywany.",
       "sudoPassword": "Wysyłane do terminala przez prawy przycisk → Wpisz hasło sudo. Nigdy nie jest tu pokazywane."
     },
@@ -292,6 +296,21 @@
       "enableDesc": "Przekieruj zdalne aplikacje X11 do lokalnego serwera X. Tryb zaufany (-Y): zdalny host widzi wyłącznie jednorazowe fałszywe ciasteczko sesji — prawdziwe ciasteczko xauth pozostaje lokalnie",
       "displayOverride": "Nadpisanie DISPLAY",
       "displayPlaceholder": "Automatycznie wykrywane, jeśli puste"
+    },
+    "storedSecret": {
+      "saved": "Zapisane i zaszyfrowane. Wartość nigdy nie jest pokazywana.",
+      "savedNotEncrypted": "Zapisane, ale jeszcze niezaszyfrowane: systemowy pęk kluczy był niedostępny. Aplikacja zaszyfruje je przy najbliższym starcie z działającym pękiem kluczy.",
+      "change": "Zmień",
+      "changeNamed": "Zmień: {{name}}",
+      "remove": "Usuń",
+      "removeNamed": "Usuń: {{name}}",
+      "undo": "Cofnij",
+      "undoNamed": "Cofnij usunięcie: {{name}}",
+      "cancelNamed": "Anuluj zmianę: {{name}}",
+      "newValue": "Wpisz nową wartość",
+      "replacing": "Zastąpi zapisaną wartość po zapisaniu. Anuluj zachowuje zapisaną.",
+      "replacingNotStored": "Zapisywanie haseł jest wyłączone w ustawieniach: nowa wartość nie zostanie zapisana, a zapisana pozostanie.",
+      "removing": "Zapisana wartość zostanie usunięta po zapisaniu."
     }
   },
   "settings": {
@@ -308,7 +327,7 @@
     },
     "terminal": {
       "appearance": "Wygląd terminala",
-      "appearanceDesc": "Skonfiguruj wygląd i zachowanie terminala.",
+      "appearanceDesc": "Skonfiguruj wygląd terminala i tapetę tła całej aplikacji.",
       "fontFamily": "Krój pisma",
       "fontSize": "Rozmiar czcionki: {{size}} px",
       "lineHeight": "Wysokość wiersza: {{height}}",
@@ -325,7 +344,7 @@
       "changeImage": "Zmień obraz",
       "uploadImage": "Wgraj obraz",
       "remove": "Usuń",
-      "imagePreviewDesc": "Obraz tła będzie wyświetlany pod tekstem terminala. Dostosuj krycie i rozmycie, aby poprawić czytelność.",
+      "imagePreviewDesc": "Obraz tła jest wyświetlany za całą aplikacją, w tym terminalem. Dostosuj krycie i rozmycie, aby poprawić czytelność.",
       "imageOpacity": "Krycie obrazu: {{opacity}}%",
       "imageBlur": "Rozmycie obrazu: {{blur}} px",
       "imagePosition": "Położenie obrazu",
@@ -371,7 +390,17 @@
       "hostKeyVerification": "Weryfikacja klucza hosta",
       "hostKeyVerificationDesc": "Weryfikuj klucze hostów SSH dla większego bezpieczeństwa",
       "allowPasswordSaving": "Zezwalaj na zapisywanie haseł lokalnie",
-      "allowPasswordSavingDesc": "Określa, czy okno połączenia oferuje zapisywanie danych logowania. Zapisane dane pozostają nietknięte i są zawsze szyfrowane AES-256-GCM."
+      "allowPasswordSavingDesc": "Pokazuje opcję zapisywania danych logowania w oknach połączenia i odblokowania klucza. Zapisane dane są szyfrowane algorytmem AES-256-GCM.",
+      "sshPassphrases": {
+        "title": "Zapisane hasła kluczy SSH",
+        "description": "Zarządzaj hasłami zapamiętanymi na tym urządzeniu. Usunięcie hasła dotyczy wszystkich połączeń korzystających z tego klucza.",
+        "empty": "Brak zapisanych haseł kluczy SSH.",
+        "loadFailed": "Nie udało się wczytać zapisanych haseł kluczy SSH.",
+        "unknownKey": "Nieznana ścieżka klucza",
+        "forget": "Usuń",
+        "forgetKey": "Usuń zapisane hasło klucza {{key}}",
+        "forgetFailed": "Nie udało się usunąć zapisanego hasła."
+      }
     },
     "interface": {
       "title": "Ustawienia interfejsu",
@@ -406,7 +435,7 @@
       "configBackup": "Kopia zapasowa konfiguracji",
       "configBackupDesc": "Wyeksportuj lub zaimportuj pełną konfigurację, aby przenieść połączenia i ustawienia na inny komputer.",
       "exportConfig": "Eksportuj konfigurację",
-      "exportConfigDesc": "Zapisz wszystkie połączenia, ustawienia i preferencje do pliku JSON. Hasła i inne poświadczenia nie są dołączane, chyba że włączona jest opcja Sekrety.",
+      "exportConfigDesc": "Zapisz wszystkie połączenia, ustawienia i preferencje do pliku JSON.",
       "importConfig": "Importuj konfigurację",
       "importConfigDesc": "Przywróć konfigurację z wcześniej wyeksportowanego pliku JSON.",
       "exportSuccess": "Konfiguracja wyeksportowana pomyślnie",
@@ -416,26 +445,21 @@
       "importCancelled": "Anulowano import",
       "importFailed": "Import nie powiódł się",
       "exportFailed": "Eksport nie powiódł się",
-      "passwordWarning": "Wyeksportowany plik nie zawiera haseł ani poświadczeń, chyba że włączysz opcję Sekrety, która szyfruje je wybranym przez Ciebie hasłem. Bez niej po zaimportowaniu na innym urządzeniu należy ponownie wprowadzić poświadczenia.",
+      "passwordWarning": "Domyślnie eksport nie zawiera żadnych haseł ani poświadczeń, ani jawnych, ani zaszyfrowanych. Zaznacz opcję poniżej, aby je dołączyć zaszyfrowane wybranym przez Ciebie hasłem; bez tego hasła nie da się ich przywrócić.",
       "mergeOption": "Scal z istniejącymi",
-      "secretToggle": "Sekrety",
-      "secretExportHint": "Zapisz także sekrety połączeń, zaszyfrowane hasłem",
-      "secretUnreadable": "Nie można odszyfrować zapisanych poświadczeń połączenia „{{name}}”. Wprowadź je ponownie lub wyłącz opcję Sekrety, aby wyeksportować bez poświadczeń.",
-      "passphrase": {
-        "exportTitle": "Zaszyfruj sekrety",
-        "exportDesc": "Wybierz hasło chroniące sekrety w tym eksporcie. Będzie potrzebne przy imporcie, a bez niego nie da się ich odzyskać.",
-        "importTitle": "Odszyfruj sekrety",
-        "importDesc": "Wprowadź hasło wybrane podczas eksportu tego pliku.",
-        "label": "Hasło",
-        "confirm": "Potwierdź hasło",
-        "continue": "Dalej",
-        "mismatch": "Hasła nie są takie same.",
-        "wrong": "Hasło jest nieprawidłowe lub plik został zmodyfikowany.",
-        "hintOptional": "Podpowiedź (opcjonalnie)",
-        "hintDesc": "Wyświetlana podczas importu. Jest zapisana w pliku bez szyfrowania, więc każdy, kto ma plik, może ją odczytać.",
-        "hint": "Podpowiedź"
-      },
-      "noSecretsToExport": "Brak zapisanych sekretów do dołączenia, więc ten eksport nie jest szyfrowany."
+      "exportIncludeCredentials": "Dołącz hasła i inne poświadczenia, zaszyfrowane hasłem eksportu",
+      "exportPassphrase": "Hasło eksportu",
+      "exportPassphraseRepeat": "Powtórz hasło eksportu",
+      "exportPassphraseHint": "Co najmniej {{min}} znaków. Będzie potrzebne przy imporcie poświadczeń; bez niego nie da się ich odzyskać.",
+      "exportPassphraseMismatch": "Hasła eksportu nie są takie same",
+      "importPassphraseTitle": "Zaszyfrowane poświadczenia",
+      "importPassphraseDesc": "Ten plik zawiera hasła i inne poświadczenia zaszyfrowane hasłem eksportu. Wpisz je, aby je przywrócić, albo pomiń, aby zaimportować resztę.",
+      "importPassphraseWrong": "Nieprawidłowe hasło eksportu lub uszkodzone poświadczenia. Spróbuj ponownie albo pomiń poświadczenia.",
+      "importWithoutCredentials": "Pomiń poświadczenia",
+      "importCredentialsRestored_one": "Przywrócono poświadczenia: {{count}} połączenie.",
+      "importCredentialsRestored_few": "Przywrócono poświadczenia: {{count}} połączenia.",
+      "importCredentialsRestored_many": "Przywrócono poświadczenia: {{count}} połączeń.",
+      "importCredentialsRestored_other": "Przywrócono poświadczenia: {{count}} połączenia."
     },
     "language": {
       "label": "Język",
@@ -1830,5 +1854,136 @@
     "logonFailed": "Logowanie nie powiodło się. Sprawdź ekran logowania Windows.",
     "logonWarning": "Windows wyświetlił ostrzeżenie logowania. Sprawdź ekran zdalny.",
     "serverNotification": "Windows zgłosił powiadomienie logowania. Sprawdź ekran zdalny."
+  },
+  "openSsh": {
+    "import": {
+      "title": "Importuj konfigurację OpenSSH",
+      "description": "Wyświetl hosty, sprawdź różnice i zapisz połączenia w R-Shell. Klucze prywatne pozostaną w oryginalnych plikach.",
+      "source": "Plik konfiguracji",
+      "browse": "Wybierz plik konfiguracji",
+      "preview": "Podgląd",
+      "folder": "Folder nowych połączeń",
+      "search": "Szukaj aliasu, hosta lub użytkownika",
+      "selectVisible": "Zmień zaznaczenie widocznych hostów",
+      "selectHost": "Zaznacz {{alias}}",
+      "diagnostics": "Uwagi: {{count}}",
+      "empty": "Brak pasujących aliasów hostów.",
+      "target": "Host docelowy",
+      "diffHint": "Poniżej są tylko zmiany źródła. W razie konfliktu zostanie zachowana wartość lokalna, chyba że wybierzesz wartość ze źródła.",
+      "previous": "Poprzednio importowane źródło",
+      "current": "Konfiguracja lokalna",
+      "incoming": "Aktualne źródło",
+      "useSource": "Użyj wartości ze źródła w tym konflikcie",
+      "start": "Wybierz plik konfiguracji i wyświetl hosty. Podgląd nie nawiązuje połączenia sieciowego.",
+      "submit": "Importuj ({{count}})",
+      "success": "Import zakończony: {{count}}",
+      "localChanged": "Zapisane połączenia zmieniły się podczas podglądu. Sprawdź nowe różnice i ponownie zaznacz hosty.",
+      "errors": {
+        "corruptStorage": "Nie można odczytać zapisanych połączeń. Napraw zapisane dane przed importem.",
+        "missingFolder": "Folder docelowy już nie istnieje. Wybierz inny folder.",
+        "sourceErrors": "Konfiguracja źródłowa zawiera błędy uniemożliwiające import.",
+        "invalidHost": "Nie można zaimportować wybranego hosta. Ponownie wyświetl podgląd źródła.",
+        "ambiguousSource": "Wiele zapisanych połączeń ma to samo źródło i alias. Usuń powielone powiązania przed importem."
+      }
+    },
+    "status": {
+      "new": "Nowy",
+      "unchanged": "Już zaimportowano",
+      "changed": "Zmiana źródła",
+      "conflict": "Konflikt",
+      "ambiguous": "Powielone powiązanie źródła",
+      "blocked": "Import niemożliwy"
+    },
+    "fields": {
+      "host": "Host",
+      "port": "Port",
+      "username": "Użytkownik",
+      "authMethod": "Uwierzytelnianie",
+      "identityFiles": "Pliki tożsamości",
+      "identityAgent": "Agent SSH",
+      "identitiesOnly": "Używaj tylko skonfigurowanych tożsamości",
+      "connectTimeout": "Limit czasu połączenia (sekundy)",
+      "compression": "Kompresja",
+      "keepAlive": "Podtrzymywanie połączenia",
+      "keepAliveInterval": "Odstęp podtrzymywania",
+      "serverAliveCountMax": "Liczba prób podtrzymywania",
+      "jumpHosts": "Łańcuch hostów pośredniczących"
+    },
+    "editor": {
+      "auto": "Agent SSH i pliki tożsamości",
+      "defaultKeys": "Domyślne pliki tożsamości",
+      "customKeys": "Wybierz pliki tożsamości",
+      "noKeys": "Bez plików tożsamości (none)",
+      "defaultAgent": "Systemowy agent SSH",
+      "keyPaths": "Jedna ścieżka pliku tożsamości na wiersz",
+      "keysHint": "Klucze są sprawdzane w podanej kolejności. Zaszyfrowane klucze można odblokować podczas łączenia.",
+      "agentHint": "Automatyczne wykrywanie, ścieżka gniazda lub none",
+      "agentDescription": "Domyślnie R-Shell próbuje użyć systemowego agenta SSH i Bitwarden. Podaj ścieżkę gniazda, aby wybrać konkretnego agenta, lub none, aby wyłączyć agentów. Gdy pojawi się prośba, odblokuj sejf lub zatwierdź podpis w menedżerze haseł.",
+      "identitiesHint": "Agent nadal może podpisywać przy użyciu wymienionych tożsamości.",
+      "chainHint": "Hosty są używane w tej kolejności, a następnie host docelowy. Każdy ma własnego użytkownika i uwierzytelnianie.",
+      "hop": "Host pośredniczący {{number}}",
+      "moveUp": "Przesuń host w górę",
+      "moveDown": "Przesuń host w dół",
+      "removeHop": "Usuń host",
+      "addHop": "Dodaj host pośredniczący",
+      "editChain": "Edytuj jako łańcuch hostów",
+      "appDefault": "Domyślne ustawienie aplikacji"
+    },
+    "unlock": {
+      "title": "Odblokuj klucz prywatny SSH",
+      "description": "Domyślnie R-Shell przechowuje hasło na czas tego połączenia i powiązanych transferów.",
+      "incorrect": "Hasło nie odblokowało klucza. Spróbuj ponownie lub pomiń klucz.",
+      "passphrase": "Hasło klucza",
+      "skip": "Pomiń ten klucz",
+      "submit": "Odblokuj",
+      "remember": "Zapamiętaj hasło na tym urządzeniu",
+      "rememberHint": "Używaj hasła przy kolejnych połączeniach z tym kluczem. Zapisanymi hasłami możesz zarządzać w sekcji Ustawienia → Bezpieczeństwo.",
+      "saveFailed": "Połączono, ale R-Shell nie mógł zapisać hasła klucza na tym urządzeniu."
+    },
+    "diagnostic": {
+      "homeUnavailable": "Nie można ustalić katalogu domowego użytkownika",
+      "usernameUnavailable": "Nie można ustalić nazwy lokalnego użytkownika",
+      "previewFailed": "Nie można wyświetlić podglądu konfiguracji: {{detail}}",
+      "unterminatedQuote": "Niezamknięty cudzysłów",
+      "unterminatedEnvironmentVariable": "Niezamknięte odwołanie do zmiennej środowiskowej",
+      "missingEnvironmentVariable": "Zmienna środowiskowa {{name}} nie jest ustawiona",
+      "invalidLocalUsername": "Nieprawidłowa nazwa lokalnego użytkownika",
+      "unknownUserHome": "Nie można ustalić katalogu domowego wskazanego użytkownika",
+      "namedUserHomeUnsupported": "Ta platforma nie obsługuje rozwijania katalogu domowego innego użytkownika",
+      "localHostnameUnavailable": "Nie można ustalić nazwy lokalnego komputera",
+      "userIdUnsupported": "Symbol %i nie jest obsługiwany w systemie Windows",
+      "fileAccess": "Nie można odczytać pliku konfiguracji {{path}}: {{detail}}",
+      "includeCycle": "Cykliczne dołączanie pliku {{path}} przez Include",
+      "includeDepth": "Zagnieżdżenie Include przekracza limit {{limit}} plików",
+      "notRegularFile": "Konfiguracja SSH musi być zwykłym plikiem",
+      "sourceTooLarge": "Konfiguracja SSH przekracza {{limit}} MiB",
+      "previewWorkLimit": "Konfiguracja w {{path}} (wiersz {{line}}) jest zbyt złożona do wyświetlenia podglądu. Ogranicz powtarzające się dyrektywy Include lub podziel plik źródłowy.",
+      "matchUnsupported": "Nie można poprawnie przekonwertować bloków Match; tego źródła nie można zaimportować",
+      "includePathRequired": "Include wymaga ścieżki",
+      "hostPatternRequired": "Host wymaga wzorca",
+      "unsupportedToken": "Nieobsługiwany symbol ścieżki SSH: {{token}}",
+      "invalidIncludePattern": "Nieprawidłowy wzorzec Include: {{detail}}",
+      "includePatternRead": "Nie można odczytać plików pasujących do Include: {{detail}}",
+      "expectedBoolean": "Oczekiwano wartości yes lub no",
+      "invalidNumber": "Nieprawidłowa wartość liczbowa",
+      "jumpCycle": "Cykl ProxyJump obejmujący {{host}}",
+      "tooManyJumps": "ProxyJump przekracza limit {{limit}} hostów pośredniczących",
+      "jumpTargetsSelf": "ProxyJump wskazuje ponownie host docelowy",
+      "jumpRepeated": "ProxyJump zawiera powtórzony host pośredniczący",
+      "invalidJumpBrackets": "Nieprawidłowy zapis hosta pośredniczącego w nawiasach kwadratowych",
+      "invalidJumpPort": "Nieprawidłowy port ProxyJump",
+      "unbracketedIpv6": "Adresy IPv6 hostów pośredniczących wymagają nawiasów kwadratowych",
+      "invalidJumpHost": "Nieprawidłowy host ProxyJump",
+      "invalidJumpEscape": "Nieprawidłowa sekwencja ucieczki w URI ProxyJump",
+      "invalidJumpUsername": "Nieprawidłowa nazwa użytkownika ProxyJump",
+      "missingValue": "Brak wartości opcji",
+      "identityPathRequired": "IdentityFile wymaga jednej ścieżki",
+      "expectedSingleValue": "Oczekiwano jednej wartości opcji",
+      "unsupportedOption": "Nie można przekonwertować tej opcji połączenia lub uwierzytelniania",
+      "ignoredOption": "Ta opcja nie zostanie zaimportowana",
+      "proxyCommandUnsupported": "ProxyCommand nie jest obsługiwane",
+      "tooManyAliases": "Konfiguracja SSH przekracza limit {{limit}} aliasów",
+      "currentDirectoryUnavailable": "Nie można ustalić bieżącego katalogu: {{detail}}"
+    }
   }
 }
