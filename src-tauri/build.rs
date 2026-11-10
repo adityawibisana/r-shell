@@ -5,6 +5,7 @@ fn main() {
     // with the `invoke_handler!` block in src/lib.rs.
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "authenticator_codes",
             "authorize_local_file",
             "backup_open",
             "backup_seal",

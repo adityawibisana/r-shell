@@ -6,6 +6,7 @@
     "main"
   ],
   "permissions": [
+    "allow-authenticator-codes",
     "allow-authorize-local-file",
     "allow-backup-open",
     "allow-backup-seal",
