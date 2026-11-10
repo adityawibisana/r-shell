@@ -54,7 +54,8 @@ import {
   PanelBottomOpen,
   Maximize2,
   LayoutGrid,
-  Info
+  Info,
+  KeyRound
 } from 'lucide-react';
 
 interface MenuBarProps {
@@ -73,6 +74,7 @@ interface MenuBarProps {
   onToggleSystemMonitor?: () => void;
   onToggleFullscreen?: () => void;
   onOpenSettings?: () => void;
+  onOpenAuthenticator?: () => void;
   onOpenSFTP?: () => void;
   onCheckForUpdates?: () => void;
   // Update pill (VS Code-style non-intrusive availability cue)
@@ -117,6 +119,7 @@ export function MenuBar({
   onToggleSystemMonitor: _onToggleSystemMonitor,
   onToggleFullscreen: _onToggleFullscreen,
   onOpenSettings,
+  onOpenAuthenticator,
   onOpenSFTP: _onOpenSFTP,
   onCheckForUpdates,
   updateAnnouncement,
@@ -395,6 +398,11 @@ export function MenuBar({
             Receive File
           </DropdownMenuItem> */}
           {/* <DropdownMenuSeparator /> */}
+          <DropdownMenuItem onClick={onOpenAuthenticator}>
+            <KeyRound className="mr-2 h-4 w-4" />
+            {t('menuBar.authenticator')}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onOpenSettings}>
             <Settings className="mr-2 h-4 w-4" />
             {t('menuBar.options')}

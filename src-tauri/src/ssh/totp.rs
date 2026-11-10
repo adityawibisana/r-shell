@@ -1,10 +1,14 @@
 //! Time-based one-time codes (RFC 6238) for servers that ask for an
 //! authenticator code at login. Uses the parameters every authenticator app
-//! defaults to: HMAC-SHA1, 30-second steps, 6 digits.
+//! defaults to: HMAC-SHA1, 30-second steps, 6 digits. The authenticator
+//! tool reuses the same generator with the parameters an `otpauth://` URI
+//! may choose instead.
 
 use anyhow::{bail, Result};
 use hmac::{Hmac, KeyInit, Mac};
+use serde::Deserialize;
 use sha1::Sha1;
+use sha2::{Sha256, Sha512};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -42,12 +46,36 @@ fn decode_base32(secret: &str) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// HMAC hash an authenticator account uses (`algorithm` in `otpauth://`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Algorithm {
+    #[default]
+    Sha1,
+    Sha256,
+    Sha512,
+}
+
+macro_rules! hmac_digest {
+    ($hash:ty, $key:expr, $counter:expr) => {{
+        let mut mac = Hmac::<$hash>::new_from_slice($key)
+            .map_err(|_| anyhow::anyhow!("The Authenticator secret key could not be used."))?;
+        mac.update(&$counter.to_be_bytes());
+        mac.finalize().into_bytes().to_vec()
+    }};
+}
+
 /// The RFC 4226 code for one counter value, truncated to `digits`.
 fn hotp(key: &[u8], counter: u64, digits: u32) -> Result<String> {
-    let mut mac = Hmac::<Sha1>::new_from_slice(key)
-        .map_err(|_| anyhow::anyhow!("The Authenticator secret key could not be used."))?;
-    mac.update(&counter.to_be_bytes());
-    let digest = mac.finalize().into_bytes();
+    hotp_with(Algorithm::Sha1, key, counter, digits)
+}
+
+fn hotp_with(algorithm: Algorithm, key: &[u8], counter: u64, digits: u32) -> Result<String> {
+    let digest = match algorithm {
+        Algorithm::Sha1 => hmac_digest!(Sha1, key, counter),
+        Algorithm::Sha256 => hmac_digest!(Sha256, key, counter),
+        Algorithm::Sha512 => hmac_digest!(Sha512, key, counter),
+    };
     let offset = (digest[digest.len() - 1] & 0x0f) as usize;
     let word = u32::from_be_bytes([
         digest[offset] & 0x7f,
@@ -60,6 +88,26 @@ fn hotp(key: &[u8], counter: u64, digits: u32) -> Result<String> {
         word % 10u32.pow(digits),
         width = digits as usize
     ))
+}
+
+/// The code shown for `now_secs`, and the Unix time at which it expires.
+/// Unlike logins, a display never claims steps: it just shows the current one.
+pub(crate) fn code_at(
+    secret: &str,
+    algorithm: Algorithm,
+    digits: u32,
+    period: u64,
+    now_secs: u64,
+) -> Result<(String, u64)> {
+    if !(6..=8).contains(&digits) {
+        bail!("Authenticator codes must have 6 to 8 digits.");
+    }
+    if period == 0 || period > 3600 {
+        bail!("The Authenticator period must be between 1 and 3600 seconds.");
+    }
+    let key = decode_base32(secret)?;
+    let step = now_secs / period;
+    Ok((hotp_with(algorithm, &key, step, digits)?, (step + 1) * period))
 }
 
 /// Last time step a login used, per secret. Keyed by a hash so the secrets
@@ -129,6 +177,31 @@ mod tests {
         ] {
             assert_eq!(hotp(&key, time / STEP_SECS, 8).unwrap(), expected);
         }
+    }
+
+    #[test]
+    fn matches_the_rfc_6238_sha256_and_sha512_vectors() {
+        // RFC 6238 appendix B uses a 32- and a 64-byte ASCII key for these.
+        let sha256 = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA";
+        let sha512 = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA";
+        for (time, expected256, expected512) in [
+            (59u64, "46119246", "90693936"),
+            (1_111_111_109, "68084774", "25091201"),
+            (1_234_567_890, "91819424", "93441116"),
+            (20_000_000_000, "77737706", "47863826"),
+        ] {
+            assert_eq!(code_at(sha256, Algorithm::Sha256, 8, 30, time).unwrap().0, expected256);
+            assert_eq!(code_at(sha512, Algorithm::Sha512, 8, 30, time).unwrap().0, expected512);
+        }
+    }
+
+    #[test]
+    fn displayed_codes_expire_at_the_end_of_their_step() {
+        let (code, expires) = code_at(RFC_SECRET, Algorithm::Sha1, 6, 30, 59).unwrap();
+        assert_eq!((code.as_str(), expires), ("287082", 60));
+        assert_eq!(code_at(RFC_SECRET, Algorithm::Sha1, 6, 60, 59).unwrap().1, 60);
+        assert!(code_at(RFC_SECRET, Algorithm::Sha1, 5, 30, 59).is_err());
+        assert!(code_at(RFC_SECRET, Algorithm::Sha1, 6, 0, 59).is_err());
     }
 
     #[test]

@@ -459,7 +459,11 @@
       "importCredentialsRestored_one": "Przywrócono poświadczenia: {{count}} połączenie.",
       "importCredentialsRestored_few": "Przywrócono poświadczenia: {{count}} połączenia.",
       "importCredentialsRestored_many": "Przywrócono poświadczenia: {{count}} połączeń.",
-      "importCredentialsRestored_other": "Przywrócono poświadczenia: {{count}} połączenia."
+      "importCredentialsRestored_other": "Przywrócono poświadczenia: {{count}} połączenia.",
+      "importAuthenticatorAccounts_one": "Zaimportowano {{count}} konto uwierzytelniacza.",
+      "importAuthenticatorAccounts_few": "Zaimportowano {{count}} konta uwierzytelniacza.",
+      "importAuthenticatorAccounts_many": "Zaimportowano {{count}} kont uwierzytelniacza.",
+      "importAuthenticatorAccounts_other": "Zaimportowano {{count}} konta uwierzytelniacza."
     },
     "language": {
       "label": "Język",
@@ -699,6 +703,7 @@
     "findNext": "Znajdź następne",
     "findPrevious": "Znajdź poprzednie",
     "clearScreen": "Wyczyść ekran",
+    "authenticator": "Uwierzytelniacz...",
     "options": "Opcje...",
     "checkForUpdates": "Sprawdź aktualizacje",
     "updateAvailablePill": "Zaktualizuj do {{version}}",
@@ -1984,6 +1989,48 @@
       "proxyCommandUnsupported": "ProxyCommand nie jest obsługiwane",
       "tooManyAliases": "Konfiguracja SSH przekracza limit {{limit}} aliasów",
       "currentDirectoryUnavailable": "Nie można ustalić bieżącego katalogu: {{detail}}"
+    }
+  },
+  "authenticator": {
+    "title": "Uwierzytelniacz",
+    "description": "Kody jednorazowe do logowania dwuskładnikowego. Sekrety są szyfrowane na tym komputerze.",
+    "add": "Dodaj konto",
+    "searchPlaceholder": "Szukaj kont…",
+    "emptyTitle": "Brak kont",
+    "emptyDesc": "Dodaj konto, wklejając klucz konfiguracyjny lub link otpauth://.",
+    "emptySearch": "Żadne konto nie pasuje do wyszukiwania",
+    "clickToCopy": "Kliknij, aby skopiować",
+    "copied": "Skopiowano kod do schowka",
+    "copyFailed": "Nie udało się skopiować kodu",
+    "saveFailed": "Nie udało się zapisać konta",
+    "secretMissing": "Brak sekretu. Edytuj konto, aby wprowadzić go ponownie.",
+    "codeError": "Nie udało się wygenerować kodu",
+    "expiresIn_one": "Wygasa za {{count}} sekundę",
+    "expiresIn_few": "Wygasa za {{count}} sekundy",
+    "expiresIn_many": "Wygasa za {{count}} sekund",
+    "expiresIn_other": "Wygasa za {{count}} sekundy",
+    "deleteTitle": "Usunąć konto?",
+    "deleteDesc": "„{{name}}” i jego sekret zostaną usunięte z R-Shell. Upewnij się, że możesz zalogować się do tej usługi w inny sposób.",
+    "form": {
+      "titleNew": "Dodaj konto",
+      "titleEdit": "Edytuj konto",
+      "description": "Wklej klucz konfiguracyjny podany przez usługę albo link otpauth://, aby wypełnić wszystko naraz.",
+      "secret": "Klucz sekretny lub link otpauth://",
+      "secretPlaceholder": "np. JBSWY3DPEHPK3PXP",
+      "secretKeepPlaceholder": "Pozostaw puste, aby zachować zapisany sekret",
+      "secretHint": "Spacje i myślniki są ignorowane.",
+      "secretInvalid": "Nieprawidłowy sekret: może zawierać tylko litery A–Z i cyfry 2–7.",
+      "secretRequired": "Wprowadź klucz sekretny.",
+      "issuer": "Usługa",
+      "issuerPlaceholder": "np. GitHub",
+      "name": "Konto",
+      "namePlaceholder": "np. alice@example.com",
+      "nameRequired": "Wprowadź nazwę konta.",
+      "algorithm": "Algorytm",
+      "digits": "Cyfry",
+      "period": "Okres (s)",
+      "periodInvalid": "Okres musi być liczbą całkowitą od 1 do {{max}}.",
+      "advancedHint": "Większość usług używa SHA1, 6 cyfr i 30 sekund. Zmieniaj tylko, jeśli usługa tego wymaga."
     }
   }
 }

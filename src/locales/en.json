@@ -455,7 +455,9 @@
       "importPassphraseWrong": "Wrong passphrase or damaged credentials. Try again or skip the credentials.",
       "importWithoutCredentials": "Skip credentials",
       "importCredentialsRestored_one": "Credentials restored for {{count}} connection.",
-      "importCredentialsRestored_other": "Credentials restored for {{count}} connections."
+      "importCredentialsRestored_other": "Credentials restored for {{count}} connections.",
+      "importAuthenticatorAccounts_one": "{{count}} authenticator account imported.",
+      "importAuthenticatorAccounts_other": "{{count}} authenticator accounts imported."
     },
     "language": {
       "label": "Language",
@@ -687,6 +689,7 @@
     "findNext": "Find Next",
     "findPrevious": "Find Previous",
     "clearScreen": "Clear Screen",
+    "authenticator": "Authenticator...",
     "options": "Options...",
     "checkForUpdates": "Check for Updates",
     "updateAvailablePill": "Update to {{version}}",
@@ -1930,6 +1933,46 @@
       "proxyCommandUnsupported": "ProxyCommand is not supported",
       "tooManyAliases": "SSH configuration exceeds {{limit}} aliases",
       "currentDirectoryUnavailable": "Cannot determine the current directory: {{detail}}"
+    }
+  },
+  "authenticator": {
+    "title": "Authenticator",
+    "description": "One-time codes for two-factor logins. Secrets are encrypted on this computer.",
+    "add": "Add account",
+    "searchPlaceholder": "Search accounts…",
+    "emptyTitle": "No accounts yet",
+    "emptyDesc": "Add an account by pasting its setup key or otpauth:// link.",
+    "emptySearch": "No accounts match your search",
+    "clickToCopy": "Click to copy",
+    "copied": "Code copied to clipboard",
+    "copyFailed": "Could not copy the code",
+    "saveFailed": "Could not save the account",
+    "secretMissing": "Secret missing. Edit the account to enter it again.",
+    "codeError": "Could not compute a code",
+    "expiresIn_one": "Expires in {{count}} second",
+    "expiresIn_other": "Expires in {{count}} seconds",
+    "deleteTitle": "Delete account?",
+    "deleteDesc": "\"{{name}}\" and its secret will be removed from R-Shell. Make sure you can still sign in to that service another way.",
+    "form": {
+      "titleNew": "Add account",
+      "titleEdit": "Edit account",
+      "description": "Paste the setup key the service shows, or its otpauth:// link to fill in everything at once.",
+      "secret": "Secret key or otpauth:// link",
+      "secretPlaceholder": "e.g. JBSWY3DPEHPK3PXP",
+      "secretKeepPlaceholder": "Leave blank to keep the saved secret",
+      "secretHint": "Spaces and dashes are ignored.",
+      "secretInvalid": "Not a valid secret: it may only contain the letters A–Z and the digits 2–7.",
+      "secretRequired": "Enter the secret key.",
+      "issuer": "Service",
+      "issuerPlaceholder": "e.g. GitHub",
+      "name": "Account",
+      "namePlaceholder": "e.g. alice@example.com",
+      "nameRequired": "Enter an account name.",
+      "algorithm": "Algorithm",
+      "digits": "Digits",
+      "period": "Period (s)",
+      "periodInvalid": "The period must be a whole number from 1 to {{max}}.",
+      "advancedHint": "Most services use SHA1, 6 digits and 30 seconds. Change these only if the service says so."
     }
   }
 }

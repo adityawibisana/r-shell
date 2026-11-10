@@ -3,8 +3,8 @@ import { withoutSecrets } from './credential-crypto';
  * Config Export / Import
  *
  * Bundles every piece of user-configurable state (connections, folders,
- * profiles, quick commands, terminal appearance, editor config, app settings,
- * language)
+ * profiles, quick commands, authenticator accounts, terminal appearance,
+ * editor config, app settings, language)
  * into a single JSON file so the user can move their setup to another
  * machine with one click.
  */
@@ -30,6 +30,10 @@ import {
 } from './credential-crypto';
 import { ConnectionProfileManager, type ConnectionProfile } from './connection-profiles';
 import { SnippetStorageManager, type CommandSnippet } from './snippet-storage';
+import {
+  AuthenticatorStorageManager,
+  type PublicAuthenticatorAccount,
+} from './authenticator-storage';
 import {
   loadAppearanceSettings,
   saveAppearanceSettings,
@@ -68,6 +72,8 @@ export interface ConfigBundle {
     profiles?: ConnectionProfile[];
     /** Quick commands (snippets). */
     snippets?: CommandSnippet[];
+    /** Authenticator (TOTP) accounts; their secrets travel in `credentials`. */
+    authenticator?: PublicAuthenticatorAccount[];
     terminalAppearance?: TerminalAppearanceSettings;
     editorConfig?: EditorConfig;
     appSettings?: Record<string, unknown>;
@@ -85,6 +91,8 @@ interface CredentialsBlock {
   /** Canonical public configuration, authenticated inside the encrypted block. */
   metadata: string;
   connections: Record<string, ConnectionSecrets>;
+  /** Authenticator secrets (base32), keyed by account id. */
+  authenticator?: Record<string, string>;
 }
 
 export interface ExportOptions {
@@ -96,6 +104,7 @@ export interface ImportResult {
   connections: number;
   profiles: number;
   snippets: number;
+  authenticator: number;
   /** Connections whose secrets were restored from the credentials block. */
   credentials: number;
   terminalAppearance: boolean;
@@ -188,6 +197,12 @@ export async function exportAllConfig(options: ExportOptions = {}): Promise<bool
     const snippets = SnippetStorageManager.getSnippets();
     if (snippets.length) bundle.data.snippets = snippets;
 
+    // Authenticator accounts — the list only; secrets go in the credentials block.
+    const authenticatorAccounts = AuthenticatorStorageManager.getAccounts();
+    if (authenticatorAccounts.length) {
+      bundle.data.authenticator = AuthenticatorStorageManager.getPublicAccounts();
+    }
+
     // Terminal appearance
     const termAppearance = loadAppearanceSettings();
     bundle.data.terminalAppearance = termAppearance;
@@ -233,8 +248,14 @@ export async function exportAllConfig(options: ExportOptions = {}): Promise<bool
         }
         if (Object.keys(own).length > 0) secrets[connection.id] = own;
       }
-      if (Object.keys(secrets).length > 0) {
+      const authenticatorSecrets: Record<string, string> = {};
+      for (const account of authenticatorAccounts) {
+        if (account.secret) authenticatorSecrets[account.id] = await openSecret(account.secret);
+      }
+      const hasAuthenticatorSecrets = Object.keys(authenticatorSecrets).length > 0;
+      if (Object.keys(secrets).length > 0 || hasAuthenticatorSecrets) {
         const block: CredentialsBlock = { metadata: credentialMetadata(bundle), connections: secrets };
+        if (hasAuthenticatorSecrets) block.authenticator = authenticatorSecrets;
         bundle.data.credentials = {
           format: CREDENTIALS_FORMAT,
           sealed: await sealForBackup(options.credentialsPassphrase, JSON.stringify(block)),
@@ -324,8 +345,18 @@ function parseCredentialsBlock(json: string): CredentialsBlock {
   if (!isRecord(value) || typeof value.metadata !== 'string' || !isRecord(value.connections)) {
     throw new WrongPassphraseError();
   }
+  let authenticator: Record<string, string> | undefined;
+  if (Object.prototype.hasOwnProperty.call(value, 'authenticator')) {
+    if (!isRecord(value.authenticator)) throw new WrongPassphraseError();
+    authenticator = {};
+    for (const [id, secret] of Object.entries(value.authenticator)) {
+      if (typeof secret !== 'string') throw new WrongPassphraseError();
+      authenticator[id] = secret;
+    }
+  }
   return {
     metadata: value.metadata,
+    ...(authenticator ? { authenticator } : {}),
     connections: Object.fromEntries(Object.entries(value.connections).map(([id, entry]) => {
       const secrets: ConnectionSecrets = parseSecretValues(entry);
       if (isRecord(entry) && Object.prototype.hasOwnProperty.call(entry, 'jumpHosts')) {
@@ -366,6 +397,7 @@ export async function applyConfigBundle(
       connections: 0,
       profiles: 0,
       snippets: 0,
+      authenticator: 0,
       credentials: 0,
       terminalAppearance: false,
       editorConfig: false,
@@ -381,6 +413,7 @@ export async function applyConfigBundle(
 
     // 2. Credentials block first: a wrong passphrase must fail before any write.
     let restored: CredentialsBlock['connections'] = {};
+    let restoredAuthenticator: Record<string, string> = {};
     const block = data.credentials;
     if (bundleHasCredentials(bundle) && !skipCredentials) {
       if (!isRecord(block) || block.format !== CREDENTIALS_FORMAT || !isBackupSealed(block.sealed)) {
@@ -391,10 +424,22 @@ export async function applyConfigBundle(
           const decrypted = parseCredentialsBlock(await openFromBackup(credentialsPassphrase, block.sealed));
           if (decrypted.metadata !== credentialMetadata(bundle)) throw new WrongPassphraseError();
           restored = decrypted.connections;
+          restoredAuthenticator = decrypted.authenticator ?? {};
         } catch (error) {
           console.error('[config-import] Credentials block did not open:', error);
           throw new WrongPassphraseError();
         }
+      }
+    }
+
+    // Re-seal authenticator secrets now: every seal completes before any write.
+    const sealedAuthenticatorSecrets = new Map<string, string>();
+    if (Array.isArray(data.authenticator)) {
+      for (const account of data.authenticator) {
+        const secret = isRecord(account) && typeof account.id === 'string'
+          ? restoredAuthenticator[account.id]
+          : undefined;
+        if (secret) sealedAuthenticatorSecrets.set(account.id, await sealSecret(secret));
       }
     }
 
@@ -445,6 +490,15 @@ export async function applyConfigBundle(
     // 3b'. Quick commands (snippets) -------------------------------------------
     if (data.snippets && Array.isArray(data.snippets)) {
       result.snippets = SnippetStorageManager.importSnippets(data.snippets, merge);
+    }
+
+    // 3b''. Authenticator accounts ---------------------------------------------
+    if (data.authenticator && Array.isArray(data.authenticator)) {
+      result.authenticator = AuthenticatorStorageManager.importAccounts(
+        data.authenticator,
+        merge,
+        sealedAuthenticatorSecrets,
+      );
     }
 
     // 3c. Terminal appearance ---------------------------------------------------

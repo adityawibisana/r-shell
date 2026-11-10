@@ -11,7 +11,7 @@ const NATIVE_MENU_KEYS = [
   'menuBar.about', 'menuBar.services', 'menuBar.hide', 'menuBar.hideOthers', 'menuBar.showAll', 'menuBar.quit',
   'menuBar.newConnection', 'menuBar.saveFile', 'menuBar.closeTab',
   'menuBar.find', 'menuBar.clearScreen',
-  'menuBar.options', 'menuBar.checkForUpdates',
+  'menuBar.authenticator', 'menuBar.options', 'menuBar.checkForUpdates',
   'menuBar.newTab', 'menuBar.duplicateTab', 'menuBar.nextTab', 'menuBar.previousTab',
   'menuBar.reconnect', 'menuBar.disconnect',
   'menuBar.undo', 'menuBar.redo', 'menuBar.cut', 'menuBar.copy', 'menuBar.paste', 'menuBar.selectAll',

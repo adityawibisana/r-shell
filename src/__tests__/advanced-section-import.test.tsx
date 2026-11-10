@@ -23,7 +23,7 @@ vi.mock('../lib/notifications', () => ({
 }));
 
 const imported: ImportResult = {
-  connections: 2, profiles: 0, snippets: 0, credentials: 0,
+  connections: 2, profiles: 0, snippets: 0, authenticator: 0, credentials: 0,
   terminalAppearance: false, editorConfig: false, appSettings: false, language: false,
 };
 

@@ -17,6 +17,7 @@ import { StatusBar } from './components/status-bar';
 import { ConnectionDialog, ConnectionConfig } from './components/connection-dialog';
 import { HostKeyChangedDialog } from './components/host-key-changed-dialog';
 import { SettingsModal } from './components/settings-modal';
+import { AuthenticatorDialog } from './components/authenticator-dialog';
 import { IntegratedFileBrowser } from './components/integrated-file-browser';
 import { QuickCommandsPanel } from './components/quick-commands-panel';
 import { WelcomeScreen } from './components/welcome-screen';
@@ -176,6 +177,7 @@ function AppContent() {
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
   const [connectionInitialFolder, setConnectionInitialFolder] = useState<string | undefined>();
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [authenticatorOpen, setAuthenticatorOpen] = useState(false);
   // Sessions-still-connected quit prompt: the backend quit guard emits
   // `confirm-quit-sessions` with the active session count when quitting
   // would tear down live SSH or remote desktop work (quit_guard.rs).
@@ -1807,6 +1809,7 @@ function AppContent() {
       const command = commands[event.payload];
       if (command) dispatchShortcutCommand(command);
       else if (event.payload === 'check_updates') setUpdateCheckSignal(c => c + 1);
+      else if (event.payload === 'authenticator') setAuthenticatorOpen(true);
     });
     return () => { unlistenPromise.then(fn => fn()); };
   }, [activeGroup, activeTab, handleNewTab, handleOpenSettings, handleDuplicateTab, handleCloseActiveTab, runActiveTerminalCommand, dispatch]);
@@ -2175,6 +2178,7 @@ function AppContent() {
         onFindPrevious={() => runActiveTerminalCommand('find-previous')}
         onClearScreen={() => { dispatchShortcutCommand('clearTerminal'); }}
         onOpenSettings={handleOpenSettings}
+        onOpenAuthenticator={() => setAuthenticatorOpen(true)}
         onCheckForUpdates={() => setUpdateCheckSignal((current) => current + 1)}
         updateAnnouncement={updateAnnouncement}
         onOpenUpdateDialog={() => setUpdateDialogSignal((current) => current + 1)}
@@ -2406,6 +2410,8 @@ function AppContent() {
         onOpenChange={setSettingsModalOpen}
         onCheckForUpdates={() => setUpdateCheckSignal((current) => current + 1)}
       />
+
+      <AuthenticatorDialog open={authenticatorOpen} onOpenChange={setAuthenticatorOpen} />
 
       {/* Quit confirmation while SSH sessions are still connected (emitted
           by the backend quit guard). Only the Cancel button notifies the

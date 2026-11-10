@@ -23,7 +23,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-mod totp;
+pub(crate) mod totp;
 
 /// Preferred host-key algorithms advertised to the server, ordered from most to
 /// least preferred.  The legacy `ssh-rsa` (SHA-1) entry is kept so that older

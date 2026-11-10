@@ -5126,6 +5126,68 @@ pub async fn credential_open(app: tauri::AppHandle, sealed: String) -> Result<St
     open_with_key(&key, &sealed, b"")
 }
 
+/// One authenticator account to show a code for. The secret stays sealed
+/// until it gets here, so the webview never holds it in plaintext.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthenticatorCodeRequest {
+    pub sealed: String,
+    #[serde(default)]
+    pub algorithm: crate::ssh::totp::Algorithm,
+    pub digits: u32,
+    pub period: u64,
+}
+
+/// A displayed code and the Unix time it expires, or why there is none.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthenticatorCode {
+    pub code: Option<String>,
+    pub expires_at: Option<u64>,
+    pub error: Option<String>,
+}
+
+/// Current codes for the authenticator tool, in request order. One bad
+/// account reports its own error instead of failing the whole list.
+#[tauri::command]
+pub async fn authenticator_codes(
+    app: tauri::AppHandle,
+    accounts: Vec<AuthenticatorCodeRequest>,
+) -> Result<Vec<AuthenticatorCode>, String> {
+    let key = master_key(dev_master_key_path(&app)?.as_deref())?;
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "This computer's clock is set before 1970.".to_string())?
+        .as_secs();
+    Ok(accounts
+        .iter()
+        .map(|account| {
+            let result = open_with_key(&key, &account.sealed, b"").and_then(|secret| {
+                crate::ssh::totp::code_at(
+                    &secret,
+                    account.algorithm,
+                    account.digits,
+                    account.period,
+                    now_secs,
+                )
+                .map_err(|e| e.to_string())
+            });
+            match result {
+                Ok((code, expires_at)) => AuthenticatorCode {
+                    code: Some(code),
+                    expires_at: Some(expires_at),
+                    error: None,
+                },
+                Err(error) => AuthenticatorCode {
+                    code: None,
+                    expires_at: None,
+                    error: Some(error),
+                },
+            }
+        })
+        .collect())
+}
+
 #[tauri::command]
 pub async fn list_ssh_key_passphrases(app: tauri::AppHandle) -> Result<Vec<SavedKeyPassphrase>, String> {
     PassphraseStore::for_app(&app)?.list()

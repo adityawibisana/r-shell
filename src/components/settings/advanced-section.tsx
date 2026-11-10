@@ -168,6 +168,9 @@ export function AdvancedSection({
           snippets: result.snippets,
         }),
       ];
+      if (result.authenticator > 0) {
+        summary.push(t('settings.advanced.importAuthenticatorAccounts', { count: result.authenticator }));
+      }
       if (result.credentials > 0) {
         summary.push(t('settings.advanced.importCredentialsRestored', { count: result.credentials }));
       }

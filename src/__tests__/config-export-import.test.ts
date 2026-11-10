@@ -16,6 +16,7 @@ import { openConnectionSecrets } from '../lib/credential-crypto';
 import type { ConfigBundle } from '../lib/config-export-import';
 import { ConnectionProfileManager } from '../lib/connection-profiles';
 import { SnippetStorageManager } from '../lib/snippet-storage';
+import { AuthenticatorStorageManager } from '../lib/authenticator-storage';
 import {
   loadAppearanceSettings,
   saveAppearanceSettings,
@@ -1096,6 +1097,68 @@ describe('credentials block', () => {
       }
     },
   );
+
+  describe('authenticator accounts', () => {
+    const sealedTotp = `v1:test:${btoa(encodeURIComponent('JBSWY3DPEHPK3PXP'))}`;
+
+    beforeEach(() => {
+      localStorage.setItem('r-shell-authenticator-accounts', JSON.stringify([{
+        id: 'totp-1', name: 'alice', issuer: 'GitHub', secret: sealedTotp,
+        algorithm: 'SHA256', digits: 8, period: 60,
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      }]));
+    });
+
+    it('exports the list without secrets when credentials are not included', async () => {
+      const text = await exportWithPassphrase();
+      const bundle = JSON.parse(text);
+      expect(bundle.data.authenticator).toEqual([expect.objectContaining({
+        id: 'totp-1', name: 'alice', issuer: 'GitHub', algorithm: 'SHA256', digits: 8, period: 60,
+      })]);
+      expect(bundle.data.authenticator[0]).not.toHaveProperty('secret');
+      expect(text).not.toContain('JBSWY3DPEHPK3PXP');
+      expect(text).not.toContain(sealedTotp);
+    });
+
+    it('carries secrets in the sealed block and restores them sealed for this machine', async () => {
+      const text = await exportWithPassphrase('correct horse');
+      expect(text).not.toContain('JBSWY3DPEHPK3PXP');
+      const bundle = JSON.parse(text);
+      const payload = JSON.parse(decodeURIComponent(atob(bundle.data.credentials.sealed.split(':')[3])));
+      expect(payload.authenticator).toEqual({ 'totp-1': 'JBSWY3DPEHPK3PXP' });
+
+      localStorage.clear();
+      const { applyConfigBundle } = await import('../lib/config-export-import');
+      const result = await applyConfigBundle(bundle, { credentialsPassphrase: 'correct horse' });
+      expect(result.authenticator).toBe(1);
+      const [account] = AuthenticatorStorageManager.getAccounts();
+      expect(account).toMatchObject({ id: 'totp-1', name: 'alice', algorithm: 'SHA256', digits: 8, period: 60 });
+      expect(account.secret).toBe(sealedTotp);
+    });
+
+    it('seals a block for authenticator secrets alone', async () => {
+      localStorage.setItem('r-shell-connections', '[]');
+      const bundle = JSON.parse(await exportWithPassphrase('correct horse'));
+      expect(bundle.data.credentials?.sealed).toMatch(/^b1:/);
+    });
+
+    it('imports the list without secrets when credentials are skipped', async () => {
+      const bundle = JSON.parse(await exportWithPassphrase('correct horse'));
+      localStorage.clear();
+      const { applyConfigBundle } = await import('../lib/config-export-import');
+      const result = await applyConfigBundle(bundle, { skipCredentials: true });
+      expect(result.authenticator).toBe(1);
+      expect(AuthenticatorStorageManager.getAccounts()[0].secret).toBeUndefined();
+    });
+
+    it('rejects a bundle whose authenticator list was edited', async () => {
+      const bundle = JSON.parse(await exportWithPassphrase('correct horse')) as ConfigBundle;
+      bundle.data.authenticator![0].name = 'mallory';
+      const { applyConfigBundle, WrongPassphraseError } = await import('../lib/config-export-import');
+      await expect(applyConfigBundle(bundle, { credentialsPassphrase: 'correct horse' }))
+        .rejects.toBeInstanceOf(WrongPassphraseError);
+    });
+  });
 
   it('rejects a wrong passphrase before writing anything', async () => {
     const text = await exportWithPassphrase('correct horse');

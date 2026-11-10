@@ -200,6 +200,14 @@ fn build_app_menu<F: Fn(&str) -> String>(
         &[
             &MenuItem::with_id(
                 app,
+                "authenticator",
+                &t("menuBar.authenticator"),
+                true,
+                None::<&str>,
+            )?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(
+                app,
                 "settings",
                 &t("menuBar.options"),
                 true,
@@ -304,6 +312,7 @@ fn default_menu_text(key: &str) -> String {
         "menuBar.closeTab" => "Close Tab",
         "menuBar.find" => "Find...",
         "menuBar.clearScreen" => "Clear Screen",
+        "menuBar.authenticator" => "Authenticator...",
         "menuBar.options" => "Options...",
         "menuBar.checkForUpdates" => "Check for Updates",
         "menuBar.newTab" => "New Tab",
@@ -604,6 +613,7 @@ pub fn run() {
             commands::credential_open,
             commands::backup_seal,
             commands::backup_open,
+            commands::authenticator_codes,
             commands::list_ssh_key_passphrases,
             commands::forget_ssh_key_passphrase,
             // In-app updater (channel endpoints + Homebrew detection)
