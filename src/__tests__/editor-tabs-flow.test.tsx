@@ -286,6 +286,14 @@ describe('workspace editor tabs', () => {
     expect(mocks.invoke).toHaveBeenCalledWith('request_app_quit');
   });
 
+  it('routes a clean main-window close through the quit guard so live sessions are confirmed', async () => {
+    await mount();
+    const preventDefault = vi.fn();
+    act(() => { mocks.nativeClose?.({ preventDefault }); });
+    expect(preventDefault).toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith('request_app_quit');
+  });
+
   it('polls shared SSH once per connection and preserves edits on reconnect', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     // Mount and load through microtasks, avoiding waitFor's timer while fake time is paused.

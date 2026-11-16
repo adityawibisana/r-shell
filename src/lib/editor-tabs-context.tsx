@@ -162,15 +162,17 @@ export function EditorTabsProvider({ children }: { children: React.ReactNode }) 
   }, [confirmCloseTabs]);
 
   // macOS hides the main window and preserves all buffers. On other platforms
-  // closing main destroys its webview, so route a dirty close through quit.
+  // closing main destroys its webview and exits, so route every close through
+  // the quit guard: it asks first when sessions are connected or an editor is
+  // dirty, and exits straight away otherwise.
   useEffect(() => {
     if (navigator.platform.toUpperCase().includes('MAC')) return;
     let disposed = false;
     try {
       const unlisten = getCurrentWindow().onCloseRequested(event => {
-        if (disposed || ![...editors.current.values()].some(editor => editor.isDirty())) return;
+        if (disposed) return;
         event.preventDefault();
-        void invoke('request_app_quit').catch(() => {});
+        void invoke('request_app_quit').catch(() => getCurrentWindow().destroy());
       });
       return () => {
         disposed = true;
