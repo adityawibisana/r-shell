@@ -804,6 +804,8 @@
       "transferFailed": "Transfer failed: {{name}}",
       "copiedToClipboard": "{{count}} item(s) copied to clipboard",
       "cutToClipboard": "{{count}} item(s) cut to clipboard",
+      "pastingAcrossSessions_one": "Copying {{count}} item from the other session…",
+      "pastingAcrossSessions_other": "Copying {{count}} items from the other session…",
       "pasted": "{{count}} item(s) {{operation}} successfully",
       "deleted": "{{name}} deleted successfully",
       "deleteFailed": "Failed to Delete File",

@@ -13,6 +13,7 @@ fn main() {
             "cancel_transfer",
             "close_detached_session",
             "confirm_app_quit",
+            "copy_between_connections",
             "copy_file",
             "create_directory",
             "create_file",

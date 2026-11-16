@@ -14,6 +14,7 @@
     "allow-cancel-transfer",
     "allow-close-detached-session",
     "allow-confirm-app-quit",
+    "allow-copy-between-connections",
     "allow-copy-file",
     "allow-create-directory",
     "allow-create-file",

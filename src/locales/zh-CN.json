@@ -802,6 +802,7 @@
       "transferFailed": "传输失败：{{name}}",
       "copiedToClipboard": "{{count}} 项已复制到剪贴板",
       "cutToClipboard": "{{count}} 项已剪切到剪贴板",
+      "pastingAcrossSessions_other": "正在从另一个会话复制 {{count}} 项…",
       "pasted": "{{count}} 项{{operation}}成功",
       "deleted": "{{name}} 删除成功",
       "deleteFailed": "删除文件失败",

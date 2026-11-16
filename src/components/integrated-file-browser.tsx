@@ -73,6 +73,7 @@ import {
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator } from './ui/context-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog";
 import { notify } from '@/lib/notifications';
+import { setFileClipboard, useFileClipboard } from '@/lib/file-clipboard';
 import { isEditableTarget, getShortcutContext, useCommandShortcuts } from '@/lib/keyboard-shortcuts';
 
 interface FileItem {
@@ -162,7 +163,9 @@ export function IntegratedFileBrowser({ connectionId, host: _host, isConnected, 
   // new state value. This prevents the stale-path → error-toast race on tab switch.
   const committedPathRef = useRef('/home');
   committedPathRef.current = currentPath; // mirror latest state every render
-  const [clipboard, setClipboard] = useState<{ files: FileItem[], operation: 'copy' | 'cut' } | null>(null);
+  // Shared across tabs: entries carry their source connection so a paste in
+  // another session copies between servers.
+  const clipboard = useFileClipboard();
   const [renamingFile, setRenamingFile] = useState<FileItem | null>(null);
   const [newFileName, setNewFileName] = useState('');
   const [deletingFiles, setDeletingFiles] = useState<FileItem[] | null>(null);
@@ -1096,7 +1099,7 @@ export function IntegratedFileBrowser({ connectionId, host: _host, isConnected, 
     setDeletingFiles(selectedItems);
   }
 
-  const hasOpenEditor = (file: FileItem) => {
+  const hasOpenEditor = (file: Pick<FileItem, 'path' | 'type'>) => {
     const key = `${connectionId}\0${file.path}`;
     return Object.entries(editorStates).some(([path, state]) => state !== 'closed'
       && (path === key || (file.type === 'directory' && path.startsWith(`${key}/`))));
@@ -1152,27 +1155,56 @@ export function IntegratedFileBrowser({ connectionId, host: _host, isConnected, 
     setDeletingFiles(null);
   };
 
+  function toClipboard(files: FileItem[], operation: 'copy' | 'cut') {
+    setFileClipboard({
+      connectionId,
+      operation,
+      files: files.map(({ name, path, type }) => ({ name, path, type })),
+    });
+  }
+
   function handleCopyFiles(files: FileItem[]) {
-    setClipboard({ files, operation: 'copy' });
+    toClipboard(files, 'copy');
     notify.success(t('fileBrowser.toast.copiedToClipboard', { count: files.length }));
   };
 
   function handleCutFiles(files: FileItem[]) {
-    setClipboard({ files, operation: 'cut' });
+    toClipboard(files, 'cut');
     notify.success(t('fileBrowser.toast.cutToClipboard', { count: files.length }));
   };
 
   async function handlePasteFiles() {
     if (clipboard) {
-      if (clipboard.operation === 'cut' && clipboard.files.some(hasOpenEditor)) {
+      const crossSession = clipboard.connectionId !== connectionId;
+      // hasOpenEditor keys on this tab's connection; cut sources from another
+      // session are deleted only after their copy lands, so skip the check.
+      if (!crossSession && clipboard.operation === 'cut' && clipboard.files.some(hasOpenEditor)) {
         notify.warning(t('filePanel.dialog.closeEditorFirst'));
         return;
+      }
+      if (crossSession) {
+        notify.info(t('fileBrowser.toast.pastingAcrossSessions', { count: clipboard.files.length }));
       }
       try {
         for (const file of clipboard.files) {
           const destPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
-          
-          if (clipboard.operation === 'copy') {
+
+          if (crossSession) {
+            await invoke<number>('copy_between_connections', {
+              sourceConnectionId: clipboard.connectionId,
+              sourcePath: file.path,
+              targetConnectionId: connectionId,
+              targetPath: destPath,
+              isDirectory: file.type === 'directory',
+            });
+            if (clipboard.operation === 'cut') {
+              await invoke<boolean>('delete_file', {
+                connectionId: clipboard.connectionId,
+                path: file.path,
+                isDirectory: file.type === 'directory',
+              });
+            }
+          } else if (clipboard.operation === 'copy') {
             await invoke<boolean>('copy_file', {
               connectionId,
               sourcePath: file.path,
@@ -1189,12 +1221,13 @@ export function IntegratedFileBrowser({ connectionId, host: _host, isConnected, 
         
         const operation = clipboard.operation === 'copy' ? 'copied' : 'moved';
         notify.success(t('fileBrowser.toast.pasted', { count: clipboard.files.length, operation }));
-        setClipboard(null);
+        setFileClipboard(null);
         void loadFiles();
       } catch (error) {
         console.error('Failed to paste files:', error);
         notify.error(t('fileBrowser.toast.pasteFailed'), {
-          description: error instanceof Error ? error.message : t('fileBrowser.toast.pasteFailedDesc'),
+          // Tauri commands reject with the backend's message as a plain string.
+          description: error instanceof Error ? error.message : typeof error === 'string' ? error : t('fileBrowser.toast.pasteFailedDesc'),
         });
       }
     }

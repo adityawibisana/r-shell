@@ -1218,6 +1218,60 @@ pub async fn copy_file(
     }
 }
 
+/// The authenticated session behind an SSH or SFTP connection, for
+/// operations that need to run on a connection other than the caller's tab.
+async fn transfer_session_for(
+    state: &ConnectionManager,
+    connection_id: &str,
+) -> Result<Arc<russh::client::Handle<crate::ssh::Client>>, String> {
+    match state.get_connection_type(connection_id).await.as_deref() {
+        Some("SFTP") => {
+            let sftp_map = state.get_sftp_connection().await;
+            let connections = sftp_map.read().await;
+            connections
+                .get(connection_id)
+                .ok_or_else(|| format!("SFTP connection '{}' not found", connection_id))?
+                .transfer_session()
+                .map_err(|e| e.to_string())
+        }
+        Some(other) => Err(format!("Copying between connections is not supported for {}", other)),
+        None => {
+            let connection = state
+                .get_connection(connection_id)
+                .await
+                .ok_or_else(|| format!("Connection '{}' not found", connection_id))?;
+            let client = connection.read().await;
+            client.transfer_session().map_err(|e| e.to_string())
+        }
+    }
+}
+
+/// Copy a file or directory from one connection to another (clipboard paste
+/// across sessions). Each side uses its own live session, so no new login,
+/// key or authenticator code is needed.
+#[tauri::command]
+pub async fn copy_between_connections(
+    source_connection_id: String,
+    source_path: String,
+    target_connection_id: String,
+    target_path: String,
+    is_directory: bool,
+    state: State<'_, Arc<ConnectionManager>>,
+) -> Result<u64, String> {
+    let source = transfer_session_for(&state, &source_connection_id).await?;
+    let target = transfer_session_for(&state, &target_connection_id).await?;
+    crate::cross_copy::copy(
+        &source,
+        &source_path,
+        is_directory,
+        &target,
+        &target_path,
+        &CancellationToken::new(),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProcessInfo {
     pub pid: String,
@@ -3382,7 +3436,7 @@ pub async fn upload_remote_file(
                             .prepare_upload_transfer_sessions(&local, &cancel)
                             .await?
                     };
-                    let result = sftp_transfer::upload_file(
+                    let result = crate::sudo_upload::upload_file(
                         &sessions,
                         &local,
                         &remote,
@@ -3427,7 +3481,7 @@ pub async fn upload_remote_file(
                             .prepare_upload_transfer_sessions(&local, &cancel)
                             .await?
                     };
-                    let result = sftp_transfer::upload_file(
+                    let result = crate::sudo_upload::upload_file(
                         &sessions,
                         &local,
                         &remote,

@@ -2,6 +2,7 @@ import React from 'react';
 import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IntegratedFileBrowser } from '../components/integrated-file-browser';
+import { setFileClipboard } from '../lib/file-clipboard';
 
 // These integration tests perform several renders and async waits. Keep the
 // total test budget above the per-wait budget: CI can finish an individual
@@ -82,6 +83,7 @@ vi.mock('../components/ui/resizable', () => ({
 
 beforeEach(() => {
   localStorage.clear();
+  setFileClipboard(null);
   mocks.invoke.mockReset();
   mocks.invoke.mockResolvedValue([]);
   mocks.open.mockReset();
@@ -410,6 +412,43 @@ describe('IntegratedFileBrowser multi-select and batch delete', () => {
       expect(deleteCalls[0][1]).toMatchObject({ path: '/home/a.txt' });
       expect(deleteCalls[1][1]).toMatchObject({ path: '/home/b.txt' });
     });
+  });
+
+  it('Ctrl+C in one session and Ctrl+V in another copies across connections', async () => {
+    const { rerender } = render(
+      <IntegratedFileBrowser connectionId="session-a" isConnected onClose={() => {}} />,
+    );
+    fireEvent.click(await screen.findByText('a.txt'));
+    const scope = () => document.querySelector('[data-shortcut-scope="files"]')!;
+    fireEvent.keyDown(scope(), { key: 'c', ctrlKey: true });
+
+    rerender(<IntegratedFileBrowser connectionId="session-b" isConnected onClose={() => {}} />);
+    await screen.findByText('a.txt');
+    fireEvent.keyDown(scope(), { key: 'v', ctrlKey: true });
+
+    await waitFor(() => {
+      expect(mocks.invoke).toHaveBeenCalledWith('copy_between_connections', {
+        sourceConnectionId: 'session-a',
+        sourcePath: '/home/a.txt',
+        targetConnectionId: 'session-b',
+        targetPath: '/home/a.txt',
+        isDirectory: false,
+      });
+    });
+    expect(mocks.invoke).not.toHaveBeenCalledWith('copy_file', expect.anything());
+  });
+
+  it('Ctrl+V in the same session still copies on that server', async () => {
+    render(<IntegratedFileBrowser connectionId="session-a" isConnected onClose={() => {}} />);
+    fireEvent.click(await screen.findByText('a.txt'));
+    const scope = document.querySelector('[data-shortcut-scope="files"]')!;
+    fireEvent.keyDown(scope, { key: 'c', ctrlKey: true });
+    fireEvent.keyDown(scope, { key: 'v', ctrlKey: true });
+
+    await waitFor(() => {
+      expect(mocks.invoke).toHaveBeenCalledWith('copy_file', expect.objectContaining({ connectionId: 'session-a' }));
+    });
+    expect(mocks.invoke).not.toHaveBeenCalledWith('copy_between_connections', expect.anything());
   });
 
   it('right-click on a selected row offers batch delete for the whole selection', async () => {

@@ -19,6 +19,10 @@ mod sftp_transfer;
 mod socks_proxy;
 mod ssh;
 mod ssh_config;
+mod sudo_upload;
+mod cross_copy;
+#[cfg(test)]
+mod live_transfer_e2e;
 mod vnc_client;
 mod websocket_server;
 mod x11;
@@ -561,6 +565,7 @@ pub fn run() {
             commands::read_file_content,
             commands::read_remote_file_base64,
             commands::copy_file,
+            commands::copy_between_connections,
             commands::detect_gpu,
             commands::get_gpu_stats,
             commands::get_websocket_port,

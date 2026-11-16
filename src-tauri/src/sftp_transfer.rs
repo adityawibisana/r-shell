@@ -815,6 +815,41 @@ where
     Ok(transferred)
 }
 
+/// The server refused to create the upload target with SFTP
+/// `PERMISSION_DENIED` (e.g. a root-owned `/etc/ssl/certs`). Typed so the
+/// upload command can recognise it and retry through `sudo` without matching
+/// on the server's free-form message.
+#[derive(Debug)]
+pub(crate) struct RemoteCreateDenied {
+    pub path: String,
+    detail: String,
+}
+
+impl std::fmt::Display for RemoteCreateDenied {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Failed to create remote file '{}': {}", self.path, self.detail)
+    }
+}
+
+impl std::error::Error for RemoteCreateDenied {}
+
+fn create_remote_file_error(
+    remote_path: &str,
+    e: russh_sftp::client::error::Error,
+) -> anyhow::Error {
+    match &e {
+        russh_sftp::client::error::Error::Status(status)
+            if status.status_code == StatusCode::PermissionDenied =>
+        {
+            anyhow::Error::new(RemoteCreateDenied {
+                path: remote_path.to_string(),
+                detail: e.to_string(),
+            })
+        }
+        _ => anyhow!("Failed to create remote file '{}': {}", remote_path, e),
+    }
+}
+
 /// Upload `local_path` to `remote_path`, streaming from disk with pipelined
 /// writes. Returns the number of bytes transferred. Cancelling `cancel`
 /// aborts the transfer promptly; the remote file may remain partial (same
@@ -857,7 +892,7 @@ pub(crate) async fn upload_file(
                     FileAttributes::default(),
                 )
                 .await
-                .map_err(|e| anyhow!("Failed to create remote file '{}': {}", remote_path, e))?
+                .map_err(|e| create_remote_file_error(remote_path, e))?
                 .handle;
             Ok::<_, anyhow::Error>((raw, handle, write_len, started.elapsed()))
         } => setup?,
