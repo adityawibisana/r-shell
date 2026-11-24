@@ -73,7 +73,7 @@ import {
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator } from './ui/context-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog";
 import { notify } from '@/lib/notifications';
-import { setFileClipboard, useFileClipboard } from '@/lib/file-clipboard';
+import { clearFileClipboard, copyToFileClipboard, useFileClipboard, type FileClipboardEntry } from '@/lib/file-clipboard';
 import { isEditableTarget, getShortcutContext, useCommandShortcuts } from '@/lib/keyboard-shortcuts';
 
 interface FileItem {
@@ -1156,11 +1156,12 @@ export function IntegratedFileBrowser({ connectionId, host: _host, isConnected, 
   };
 
   function toClipboard(files: FileItem[], operation: 'copy' | 'cut') {
-    setFileClipboard({
+    // Fire-and-forget: staging runs in the background; paste checks status.
+    void copyToFileClipboard(
       connectionId,
       operation,
-      files: files.map(({ name, path, type }) => ({ name, path, type })),
-    });
+      files.map(({ name, path, type }) => ({ name, path, type })),
+    );
   }
 
   function handleCopyFiles(files: FileItem[]) {
@@ -1173,6 +1174,26 @@ export function IntegratedFileBrowser({ connectionId, host: _host, isConnected, 
     notify.success(t('fileBrowser.toast.cutToClipboard', { count: files.length }));
   };
 
+  /** Delete cut sources on the other session after their copy landed. */
+  async function removeCutSources(sourceConnectionId: string, sources: FileClipboardEntry[]) {
+    const kept: string[] = [];
+    for (const file of sources) {
+      try {
+        await invoke<boolean>('delete_file', {
+          connectionId: sourceConnectionId,
+          path: file.path,
+          isDirectory: file.type === 'directory',
+        });
+      } catch (error) {
+        console.error('[FileBrowser] Failed to remove cut source:', error);
+        kept.push(file.name);
+      }
+    }
+    if (kept.length > 0) {
+      notify.warning(t('fileBrowser.toast.cutSourceNotRemoved', { count: kept.length, names: kept.join(', ') }));
+    }
+  }
+
   async function handlePasteFiles() {
     if (clipboard) {
       const crossSession = clipboard.connectionId !== connectionId;
@@ -1182,46 +1203,57 @@ export function IntegratedFileBrowser({ connectionId, host: _host, isConnected, 
         notify.warning(t('filePanel.dialog.closeEditorFirst'));
         return;
       }
+      if (crossSession && clipboard.status === 'staging') {
+        notify.info(t('fileBrowser.toast.clipboardStillStaging'));
+        return;
+      }
       if (crossSession) {
         notify.info(t('fileBrowser.toast.pastingAcrossSessions', { count: clipboard.files.length }));
       }
       try {
-        for (const file of clipboard.files) {
-          const destPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
+        if (crossSession && clipboard.status === 'ready') {
+          // Upload from the local stage; the source session may be gone.
+          await invoke<number>('paste_staged_clipboard', {
+            stageToken: clipboard.stageToken,
+            targetConnectionId: connectionId,
+            targetDir: currentPath,
+          });
+        } else {
+          for (const file of clipboard.files) {
+            const destPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
 
-          if (crossSession) {
-            await invoke<number>('copy_between_connections', {
-              sourceConnectionId: clipboard.connectionId,
-              sourcePath: file.path,
-              targetConnectionId: connectionId,
-              targetPath: destPath,
-              isDirectory: file.type === 'directory',
-            });
-            if (clipboard.operation === 'cut') {
-              await invoke<boolean>('delete_file', {
-                connectionId: clipboard.connectionId,
-                path: file.path,
+            if (crossSession) {
+              await invoke<number>('copy_between_connections', {
+                sourceConnectionId: clipboard.connectionId,
+                sourcePath: file.path,
+                targetConnectionId: connectionId,
+                targetPath: destPath,
                 isDirectory: file.type === 'directory',
               });
+            } else if (clipboard.operation === 'copy') {
+              await invoke<boolean>('copy_file', {
+                connectionId,
+                sourcePath: file.path,
+                destPath: destPath
+              });
+            } else {
+              await invoke<boolean>('rename_file', {
+                connectionId,
+                oldPath: file.path,
+                newPath: destPath
+              });
             }
-          } else if (clipboard.operation === 'copy') {
-            await invoke<boolean>('copy_file', {
-              connectionId,
-              sourcePath: file.path,
-              destPath: destPath
-            });
-          } else {
-            await invoke<boolean>('rename_file', {
-              connectionId,
-              oldPath: file.path,
-              newPath: destPath
-            });
           }
         }
-        
+        if (crossSession && clipboard.operation === 'cut') {
+          await removeCutSources(clipboard.connectionId, clipboard.files);
+        }
+
         const operation = clipboard.operation === 'copy' ? 'copied' : 'moved';
         notify.success(t('fileBrowser.toast.pasted', { count: clipboard.files.length, operation }));
-        setFileClipboard(null);
+        // A copy stays on the clipboard so it can be pasted again; a cut is
+        // spent once it lands.
+        if (clipboard.operation === 'cut') clearFileClipboard();
         void loadFiles();
       } catch (error) {
         console.error('Failed to paste files:', error);

@@ -1272,6 +1272,56 @@ pub async fn copy_between_connections(
     .map_err(|e| e.to_string())
 }
 
+fn clipboard_stage_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|dir| crate::clipboard_stage::stage_dir(&dir))
+        .map_err(|e| format!("Cannot resolve the app data directory: {e}"))
+}
+
+/// Download a file browser selection into the single local clipboard stage,
+/// replacing whatever was staged before. Returns `tooLarge` (and stages
+/// nothing) above the 500 MB limit.
+#[tauri::command]
+pub async fn stage_clipboard(
+    connection_id: String,
+    stage_token: String,
+    entries: Vec<crate::clipboard_stage::StageRequestEntry>,
+    app: tauri::AppHandle,
+    state: State<'_, Arc<ConnectionManager>>,
+) -> Result<crate::clipboard_stage::StageOutcome, String> {
+    let dir = clipboard_stage_dir(&app)?;
+    let source = transfer_session_for(&state, &connection_id).await?;
+    crate::clipboard_stage::stage(&dir, &source, &connection_id, &stage_token, &entries)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Upload the staged clipboard into `target_dir` on another connection.
+#[tauri::command]
+pub async fn paste_staged_clipboard(
+    stage_token: String,
+    target_connection_id: String,
+    target_dir: String,
+    app: tauri::AppHandle,
+    state: State<'_, Arc<ConnectionManager>>,
+) -> Result<u64, String> {
+    let dir = clipboard_stage_dir(&app)?;
+    let target = transfer_session_for(&state, &target_connection_id).await?;
+    crate::clipboard_stage::paste(&dir, &stage_token, &target, &target_dir)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Cancel any staging in flight and empty the local clipboard stage.
+#[tauri::command]
+pub async fn clear_clipboard_stage(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = clipboard_stage_dir(&app)?;
+    crate::clipboard_stage::clear(&dir)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProcessInfo {
     pub pid: String,

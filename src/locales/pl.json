@@ -871,7 +871,12 @@
       "deletedMultiple": "Pomyślnie usunięto elementy: {{count}}",
       "deleteSomeFailed": "Nie udało się usunąć {{failed}} z {{total}} elementów",
       "downloadFoldersNotSupported": "Folderów nie można pobierać zbiorczo; użyj opcji Pobierz katalog",
-      "downloadedFilesSkippedFolders": "Pobrano pliki: {{count}}, pominięto foldery: {{folders}}"
+      "downloadedFilesSkippedFolders": "Pobrano pliki: {{count}}, pominięto foldery: {{folders}}",
+      "clipboardStillStaging": "Schowek jest jeszcze kopiowany na ten komputer. Wklej ponownie za chwilę.",
+      "cutSourceNotRemoved_one": "Wklejono, ale {{count}} elementu źródłowego nie udało się usunąć z drugiej sesji: {{names}}",
+      "cutSourceNotRemoved_few": "Wklejono, ale {{count}} elementów źródłowych nie udało się usunąć z drugiej sesji: {{names}}",
+      "cutSourceNotRemoved_many": "Wklejono, ale {{count}} elementów źródłowych nie udało się usunąć z drugiej sesji: {{names}}",
+      "cutSourceNotRemoved_other": "Wklejono, ale {{count}} elementu źródłowego nie udało się usunąć z drugiej sesji: {{names}}"
     },
     "toolbar": {
       "editPath": "Edytuj ścieżkę",

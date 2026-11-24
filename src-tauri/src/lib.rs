@@ -21,6 +21,7 @@ mod ssh;
 mod ssh_config;
 mod sudo_upload;
 mod cross_copy;
+mod clipboard_stage;
 #[cfg(test)]
 mod live_transfer_e2e;
 mod vnc_client;
@@ -378,6 +379,12 @@ pub fn run() {
                     crate::rdp::cert_store::set_store_path(path);
                 }
 
+                // The file browser clipboard stage never outlives a run;
+                // drop whatever a crash may have left behind.
+                if let Ok(dir) = app.path().app_data_dir() {
+                    let _ = crate::clipboard_stage::wipe(&crate::clipboard_stage::stage_dir(&dir));
+                }
+
                 // Register native macOS menu and forward item events to the frontend
                 #[cfg(target_os = "macos")]
                 {
@@ -566,6 +573,9 @@ pub fn run() {
             commands::read_remote_file_base64,
             commands::copy_file,
             commands::copy_between_connections,
+            commands::stage_clipboard,
+            commands::paste_staged_clipboard,
+            commands::clear_clipboard_stage,
             commands::detect_gpu,
             commands::get_gpu_stats,
             commands::get_websocket_port,
@@ -635,6 +645,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| match event {
+            tauri::RunEvent::Exit => {
+                if let Ok(dir) = app.path().app_data_dir() {
+                    let _ = crate::clipboard_stage::wipe(&crate::clipboard_stage::stage_dir(&dir));
+                }
+            }
             // The last window was destroyed. On macOS the app keeps running
             // window-less (Terminal.app / VS Code behaviour: quitting goes
             // through the quit_app menu item / quit_guard). With close-to-

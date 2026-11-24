@@ -37,7 +37,7 @@ impl LocalTemp {
 }
 
 /// Split a POSIX path into (parent, name). `/a/b` → (`/a`, `b`), `/b` → (`/`, `b`).
-fn split_remote(path: &str) -> Result<(&str, &str)> {
+pub(crate) fn split_remote(path: &str) -> Result<(&str, &str)> {
     let trimmed = path.trim_end_matches('/');
     let idx = trimmed
         .rfind('/')
@@ -51,7 +51,7 @@ fn split_remote(path: &str) -> Result<(&str, &str)> {
 }
 
 /// Run `command`, turning a non-zero exit into an error carrying its output.
-async fn run(session: &Session, command: &str, what: &str) -> Result<String> {
+pub(crate) async fn run(session: &Session, command: &str, what: &str) -> Result<String> {
     let (code, out) = exec(session, command).await?;
     if code != 0 {
         let out = out.trim();
@@ -121,10 +121,23 @@ async fn copy_directory(
     target_path: &str,
     cancel: &CancellationToken,
 ) -> Result<u64> {
-    let (src_parent, src_name) = split_remote(source_path)?;
-    let (dst_parent, dst_name) = split_remote(target_path)?;
     let local = LocalTemp::new()?;
+    let bytes = download_directory_archive(source, source_path, local.path()?, cancel).await?;
+    let (_, src_name) = split_remote(source_path)?;
+    upload_directory_archive(target, local.path()?, src_name, target_path, cancel).await?;
+    Ok(bytes)
+}
 
+/// Pack `source_path` on the source server and fetch it as one tar archive
+/// to `local_path`. The archive holds a single top-level entry named after
+/// the directory.
+pub(crate) async fn download_directory_archive(
+    source: &Session,
+    source_path: &str,
+    local_path: &str,
+    cancel: &CancellationToken,
+) -> Result<u64> {
+    let (src_parent, src_name) = split_remote(source_path)?;
     // Pack on the source into a private temp archive, fetch it, drop it.
     let archive = remote_mktemp(source).await?;
     let packed = async {
@@ -142,7 +155,7 @@ async fn copy_directory(
         crate::sftp_transfer::download_file(
             std::slice::from_ref(source),
             &archive,
-            local.path()?,
+            local_path,
             None,
             cancel,
         )
@@ -150,8 +163,19 @@ async fn copy_directory(
     }
     .await;
     let _ = exec(source, &format!("rm -f -- {}", quote(&archive))).await;
-    let bytes = packed?;
+    packed
+}
 
+/// Upload a tar archive made by [`download_directory_archive`] (top-level
+/// entry `src_name`) and install it at `target_path`.
+pub(crate) async fn upload_directory_archive(
+    target: &Session,
+    local_path: &str,
+    src_name: &str,
+    target_path: &str,
+    cancel: &CancellationToken,
+) -> Result<()> {
+    let (dst_parent, dst_name) = split_remote(target_path)?;
     // Unpack on the target. Extract into a private staging dir first so the
     // entry can be renamed when the destination name differs, then move it
     // into place — retried with sudo when the parent is not writable.
@@ -167,7 +191,7 @@ async fn copy_directory(
     let result = async {
         crate::sftp_transfer::upload_file(
             std::slice::from_ref(target),
-            local.path()?,
+            local_path,
             &archive,
             None,
             cancel,
@@ -181,12 +205,8 @@ async fn copy_directory(
         .await
     }
     .await;
-    let _ = exec(
-        target,
-        &format!("rm -rf -- {}", quote(&staging)),
-    )
-    .await;
-    result.map(|_| bytes)
+    let _ = exec(target, &format!("rm -rf -- {}", quote(&staging))).await;
+    result.map(|_| ())
 }
 
 /// Extract `archive` (which lives inside `staging`) into `staging/d`, then

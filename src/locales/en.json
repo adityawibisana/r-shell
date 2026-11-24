@@ -845,7 +845,10 @@
       "deletedMultiple": "{{count}} items deleted successfully",
       "deleteSomeFailed": "{{failed}} of {{total}} items failed to delete",
       "downloadFoldersNotSupported": "Folders cannot be batch-downloaded; use Download directory instead",
-      "downloadedFilesSkippedFolders": "Downloaded {{count}} files, skipped {{folders}} folder(s)"
+      "downloadedFilesSkippedFolders": "Downloaded {{count}} files, skipped {{folders}} folder(s)",
+      "clipboardStillStaging": "Still copying the clipboard to this computer. Paste again in a moment.",
+      "cutSourceNotRemoved_one": "Pasted, but {{count}} source item could not be removed from the other session: {{names}}",
+      "cutSourceNotRemoved_other": "Pasted, but {{count}} source items could not be removed from the other session: {{names}}"
     },
     "toolbar": {
       "editPath": "Edit path",
