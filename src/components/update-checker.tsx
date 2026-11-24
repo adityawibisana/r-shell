@@ -73,11 +73,12 @@ const isAutoCheckEnabled = () => {
     // The settings modal persists the full settings object (including
     // checkUpdates) under this single key; see SettingsModal.handleSave.
     const raw = localStorage.getItem(APP_SETTINGS_STORAGE_KEY);
-    if (!raw) return true; // default: enabled
+    // Off unless the user explicitly turned it on.
+    if (!raw) return false;
     const parsed = JSON.parse(raw);
-    return parsed.checkUpdates !== false;
+    return parsed.checkUpdates === true;
   } catch {
-    return true;
+    return false;
   }
 };
 

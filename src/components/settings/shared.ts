@@ -47,7 +47,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   allowPasswordSaving: true,
   // Fresh installs follow the OS appearance (light when no dark preference).
   theme: 'auto',
-  checkUpdates: true,
+  // Auto update checks are opt-in; manual checks always work.
+  checkUpdates: false,
   updateChannel: 'stable',
   updateProxy: '',
   autostart: false,

@@ -97,6 +97,9 @@ describe('UpdateChecker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    // Auto checks are opt-in; most tests exercise them, so opt in here.
+    // Tests about the default clear this again.
+    localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify({ checkUpdates: true }));
     progressListener = null;
     mockGetVersion.mockResolvedValue('2.9.3');
 
@@ -127,7 +130,28 @@ describe('UpdateChecker', () => {
       vi.useRealTimers();
     });
 
-    it('runs updater_check 30s after mount when auto-check is enabled (default)', async () => {
+    it('never auto-checks by default (no saved settings)', async () => {
+      localStorage.clear();
+      render(<UpdateChecker />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS + AUTO_CHECK_INTERVAL_MS); });
+      expect(mockInvoke).not.toHaveBeenCalledWith('updater_check', expect.anything());
+    });
+
+    it('never auto-checks when saved settings are unreadable', async () => {
+      localStorage.setItem(APP_SETTINGS_STORAGE_KEY, '{not json');
+      render(<UpdateChecker />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS + 5_000); });
+      expect(mockInvoke).not.toHaveBeenCalledWith('updater_check', expect.anything());
+    });
+
+    it('never auto-checks when saved settings omit checkUpdates', async () => {
+      localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify({ theme: 'dark' }));
+      render(<UpdateChecker />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS + 5_000); });
+      expect(mockInvoke).not.toHaveBeenCalledWith('updater_check', expect.anything());
+    });
+
+    it('runs updater_check 30s after mount when auto-check is enabled', async () => {
       render(<UpdateChecker />);
       expect(mockInvoke).not.toHaveBeenCalledWith('updater_check', expect.anything());
       await act(async () => { await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS); });
@@ -273,7 +297,7 @@ describe('UpdateChecker', () => {
     });
 
     it('passes the current channel through when the context is eligible', async () => {
-      localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify({ updateChannel: 'current' }));
+      localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify({ checkUpdates: true, updateChannel: 'current' }));
       render(<UpdateChecker />);
       await act(async () => { await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS); });
       expect(mockInvoke).toHaveBeenCalledWith('updater_check', {
@@ -288,7 +312,7 @@ describe('UpdateChecker', () => {
         if (cmd === 'updater_check') return Promise.resolve(null);
         return Promise.reject(new Error(`unexpected command: ${cmd}`));
       });
-      localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify({ updateChannel: 'current' }));
+      localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify({ checkUpdates: true, updateChannel: 'current' }));
 
       render(<UpdateChecker />);
       await act(async () => { await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS); });
